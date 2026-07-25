@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ░▒▓█ NEO RADAR v1.11 █▓▒░
 
+VERSION="1.11"
+REPO_RAW_URL="https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/neoradar"
+
 # ANSI Color Codes
 CLR_RESET="\033[0m"
 CLR_CYAN="\033[1;36m"
@@ -36,7 +39,7 @@ show_end_options() {
             ;;
         [sS])
             if [ "$suppress_save" = "true" ]; then
-                start_neo_scanner
+                start_neo_radar
                 return
             fi
 
@@ -67,7 +70,7 @@ show_end_options() {
             show_end_options "$suppress_save" "${output_data[@]}"
             ;;
         *)
-            start_neo_scanner
+            start_neo_radar
             ;;
     esac
 }
@@ -145,14 +148,14 @@ get_vendor() {
     # Fallback common OUI Table
     case "$oui_clean" in
         005056|000C29|000569|00155D) echo "VMware / Hyper-V" ;;
-        080027|0A0027)             echo "Oracle VirtualBox" ;;
+        080027|0A0027)               echo "Oracle VirtualBox" ;;
         B827EB|D43A04|E45F01|2CCF67) echo "Raspberry Pi" ;;
         001A11|3C5AB4|F4F5DB|DAA119) echo "Google" ;;
         000393|000502|A483E7|1093E9) echo "Apple" ;;
         50C7BF|E848B8|001D0F|98DAC4) echo "TP-Link" ;;
         00146C|00184D|288023|A42B8C) echo "NETGEAR" ;;
         00166F|001E64|A44E31|8086F2) echo "Intel" ;;
-        *)                          echo "Unknown Vendor ($oui_clean)" ;;
+        *)                           echo "Unknown Vendor ($oui_clean)" ;;
     esac
 }
 
@@ -167,13 +170,78 @@ check_port() {
     return $?
 }
 
-start_neo_scanner() {
+# --- Option 7: Check for Updates ---
+check_for_updates() {
+    echo -e "${CLR_CYAN}[+] Checking GitHub for updates...${CLR_RESET}"
+    
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "${CLR_RED}[-] Error: 'curl' is required to check for updates.${CLR_RESET}"
+        show_end_options "true"
+        return
+    fi
+
+    local remote_code
+    remote_code=$(curl -sSL "$REPO_RAW_URL" 2>/dev/null)
+
+    if [ -z "$remote_code" ]; then
+        echo -e "${CLR_RED}[-] Could not reach GitHub repository. Check network connection.${CLR_RESET}"
+        show_end_options "true"
+        return
+    fi
+
+    local remote_version
+    remote_version=$(echo "$remote_code" | grep -i '^VERSION=' | head -n 1 | cut -d'"' -f2)
+
+    if [ -z "$remote_version" ]; then
+        echo -e "${CLR_RED}[-] Could not parse remote version information.${CLR_RESET}"
+        show_end_options "true"
+        return
+    fi
+
+    echo -e "  Current Version: ${CLR_YELLOW}v$VERSION${CLR_RESET}"
+    echo -e "  Latest Version : ${CLR_GREEN}v$remote_version${CLR_RESET}"
+
+    if [ "$VERSION" = "$remote_version" ]; then
+        echo -e "\n${CLR_GREEN}[+] You are running the latest version of NEO RADAR!${CLR_RESET}"
+        show_end_options "true"
+        return
+    fi
+
+    echo -e "\n${CLR_YELLOW}[!] A new update (v$remote_version) is available!${CLR_RESET}"
+    read -r -p "$(echo -e "${CLR_CYAN}Would you like to download and update now? (y/N): ${CLR_RESET}")" update_choice
+
+    case "$update_choice" in
+        [yY][eE][sS]|[yY])
+            echo -e "\n${CLR_CYAN}[+] Downloading update...${CLR_RESET}"
+            local target_path="$0"
+            
+            if [ -w "$target_path" ]; then
+                echo "$remote_code" > "$target_path"
+                chmod +x "$target_path"
+            else
+                echo -e "${CLR_YELLOW}[!] Administrative privileges required to overwrite $target_path${CLR_RESET}"
+                echo "$remote_code" | sudo tee "$target_path" >/dev/null
+                sudo chmod +x "$target_path"
+            fi
+
+            echo -e "${CLR_GREEN}[+] Update complete! Restarting NEO RADAR...${CLR_RESET}"
+            sleep 1.5
+            exec "$target_path"
+            ;;
+        *)
+            echo -e "${CLR_GRAY}[-] Update cancelled.${CLR_RESET}"
+            show_end_options "true"
+            ;;
+    esac
+}
+
+start_neo_radar() {
     clear
     echo ""
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.11 █▓▒░          ${CLR_RESET}"
+    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v$VERSION █▓▒░           ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_MAGENTA}            Created By ItsNEOx              ${CLR_RESET}"
+    echo -e "${CLR_MAGENTA}             Created By ItsNEOx             ${CLR_RESET}"
     echo -e "${CLR_DARKCYAN}      The super simple network scanner      ${CLR_RESET}"
     echo -e "${CLR_DARKGRAY}            for legal purposes              ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
@@ -186,6 +254,7 @@ start_neo_scanner() {
     echo "4) ARP Device MAC Lookup & Vendor Identification"
     echo "5) Hostname Scan & Fingerprinting"
     echo "6) Help / Feature Guide"
+    echo "7) Check for Updates"
     echo "E) Exit Program"
     echo ""
 
@@ -201,10 +270,16 @@ start_neo_scanner() {
 
     echo ""
 
+    # Mode 7 — Update Check
+    if [ "$mode" = "7" ]; then
+        check_for_updates
+        return
+    fi
+
     # Mode 6 — Help
     if [ "$mode" = "6" ]; then
         echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-        echo -e "${CLR_CYAN}         NEO RADAR - HELP & GUIDE           ${CLR_RESET}"
+        echo -e "${CLR_CYAN}          NEO RADAR - HELP & GUIDE          ${CLR_RESET}"
         echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
         echo ""
         
@@ -224,6 +299,9 @@ start_neo_scanner() {
         echo -e "${CLR_YELLOW}5) Hostname Scan & Fingerprinting${CLR_RESET}"
         echo -e "${CLR_GRAY}   Resolves DNS, mDNS, and NetBIOS hostnames, estimating OS based on ICMP TTL.${CLR_RESET}\n"
 
+        echo -e "${CLR_YELLOW}7) Check for Updates${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Compares local script version against GitHub main branch and updates in place.${CLR_RESET}\n"
+
         show_end_options "true"
         return
     fi
@@ -235,7 +313,7 @@ start_neo_scanner() {
 
         case "$target_ip" in
             [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-            [bB]|"") start_neo_scanner; return ;;
+            [bB]|"") start_neo_radar; return ;;
         esac
 
         echo -e "\n${CLR_CYAN}[+] Inspecting single host: $target_ip...${CLR_RESET}"
@@ -317,21 +395,21 @@ start_neo_scanner() {
 
     case "$prefix_input" in
         [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_scanner; return ;;
+        [bB]) start_neo_radar; return ;;
     esac
     prefix="${prefix_input:-$DEFAULT_PREFIX}"
 
     read -r -p "Enter starting host number (default: 1): " start_input
     case "$start_input" in
         [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_scanner; return ;;
+        [bB]) start_neo_radar; return ;;
     esac
     start_host="${start_input:-1}"
 
     read -r -p "Enter ending host number (default: 254): " end_input
     case "$end_input" in
         [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_scanner; return ;;
+        [bB]) start_neo_radar; return ;;
     esac
     end_host="${end_input:-254}"
 
@@ -549,4 +627,4 @@ start_neo_scanner() {
     show_end_options "false"
 }
 
-start_neo_scanner
+start_neo_radar
