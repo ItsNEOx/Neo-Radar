@@ -20,7 +20,18 @@ TROUBLESHOOTING!!! :
 
 Most of everything has run without troubles, but in the instance the ARP or Hostname option breaks, install or update the depencencies it uses with this command :
 
+
 sudo apt update && sudo apt install -y ieee-data samba-common-bin avahi-utils
+
+or
+
+sudo apt update && sudo apt install -y samba-common-bin avahi-utils
+
+and
+
+sudo apt install -y ieee-data
+
+
 
 This is the only issue i have faced so far in the development. Please leave feedback if you experience any faults or difficulties in the program, including your own troubleshooting if you did so,
 and how the issue was fixed so I can include that into the troubleshooting section here! If you don't know how to troubleshoot the issue, simply just leave feedback on what the problem is and what
