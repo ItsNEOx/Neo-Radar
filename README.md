@@ -8,7 +8,13 @@ The super simple, lightweight network scanner for Linux (Works in Termux too!).
 NEO-Radar Install
 Install this program by running the following code into your terminal :
 
-curl -sSL [https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/install.sh](https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/install.sh) | bash
+<b>
+  <i>
+    
+```curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/install.sh | bash```
+    
+  </i>
+</b>
 
 
 Not too hard, easiest if copy and pasted.
@@ -21,21 +27,24 @@ PLEASE use responsibly — ONLY on your own network(s) or on a network where you
 
 TROUBLESHOOTING!!! :
 
+<i>
 ARP Device MAC Lookup & Vendor Identification DOES NOT WORK ON TERMUX!!!
 For Android, the commands it uses to access MAC addresses is blocked from apps like Termux for security reasons.
+</i>
+
 
 Most of everything has run without troubles, but in the instance the ARP or Hostname option breaks, install or update the depencencies it uses with this command :
 
 
-sudo apt update && sudo apt install -y ieee-data samba-common-bin avahi-utils
+```sudo apt update && sudo apt install -y ieee-data samba-common-bin avahi-utils```
 
 or
 
-sudo apt update && sudo apt install -y samba-common-bin avahi-utils
+```sudo apt update && sudo apt install -y samba-common-bin avahi-utils```
 
 and
 
-sudo apt install -y ieee-data
+```sudo apt install -y ieee-data```
 
 
 
@@ -49,7 +58,14 @@ TERMUX / Mobile Usage:
 This also works in Termux!
 Just run in your Termux Terminal the following code :
 
-curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall.sh | bash
+<b>
+  <i>
+
+
+```curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall.sh | bash```
+  </i>
+</b>
+
 
 Thanks for checking out NEO-Radar!
 
