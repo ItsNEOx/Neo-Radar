@@ -1,6 +1,6 @@
 # ░▒▓█ NEO RADAR v1.11 █▓▒░
 
-The super simple, lightweight network scanner for Linux.
+The super simple, lightweight network scanner for Linux (Works in Termux too!).
 
 
 <img src="https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/neoradar.png" alt="image">
@@ -45,6 +45,7 @@ TERMUX / Mobile Usage:
 
 This also works in Termux!
 Just run in your Termux Terminal the following code :
+
 curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall.sh | bash
 
 Thanks for checking out NEO-Radar!
