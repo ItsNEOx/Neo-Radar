@@ -50,5 +50,7 @@ curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall
 
 Thanks for checking out NEO-Radar!
 
+Also get NEO-Radar for Windows! https://github.com/ItsNEOx/NEO-Radar-Powershell-7
+
 
 
