@@ -47,4 +47,4 @@ curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall
 Thanks for checking out NEO-Radar!
 
 
-<img src="https://static.vecteezy.com/system/resources/thumbnails/057/068/323/small/single-fresh-red-strawberry-on-table-green-background-food-fruit-sweet-macro-juicy-plant-image-photo.jpg" alt="imahe">
+<img src="(https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/neoradar.png?token=GHSAT0AAAAAAEDG3OUCXSKILCSVQINUQX5K2TE62EA" alt="image">
