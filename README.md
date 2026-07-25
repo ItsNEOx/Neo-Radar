@@ -2,6 +2,8 @@
 
 The super simple, lightweight network scanner for Linux.
 
+<img src="https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/neoradar.png" alt="image" style="box-shadow:2px 2px red;">
+
 NEO-Radar Install
 Install this program by running the following code into your terminal :
 
@@ -47,4 +49,4 @@ curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall
 Thanks for checking out NEO-Radar!
 
 
-<img src="https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/neoradar.png" alt="image">
+
