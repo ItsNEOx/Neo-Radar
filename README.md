@@ -21,8 +21,8 @@ PLEASE use responsibly — ONLY on your own network(s) or on a network where you
 
 TROUBLESHOOTING!!! :
 
-ARP Device MAC Lookup & Vendor Identification DOES NOT CURRENTLY WORK ON TERMUX!!!
-this may me fixed in the near future IF possible.
+ARP Device MAC Lookup & Vendor Identification DOES NOT WORK ON TERMUX!!!
+For Android, the commands it uses to access MAC addresses is blocked from apps like Termux for security reasons.
 
 Most of everything has run without troubles, but in the instance the ARP or Hostname option breaks, install or update the depencencies it uses with this command :
 
