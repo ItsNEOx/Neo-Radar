@@ -1,4 +1,4 @@
-# ░▒▓█ NEO RADAR v1.85 █▓▒░
+# ░▒▓█ NEO RADAR v1.11 █▓▒░
 
 The super simple, lightweight network scanner for Linux.
 
