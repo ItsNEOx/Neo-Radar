@@ -37,4 +37,14 @@ This is the only issue i have faced so far in the development. Please leave feed
 and how the issue was fixed so I can include that into the troubleshooting section here! If you don't know how to troubleshoot the issue, simply just leave feedback on what the problem is and what
 you did to get the error, and i will get on to fixing that as soon as i can!
 
+
+TERMUX / Mobile Usage:
+
+This also works in Termux!
+Just run in your Termux Terminal the following code :
+curl -sSL https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/mobileinstall.sh | bash
+
 Thanks for checking out NEO-Radar!
+
+
+<img src="https://static.vecteezy.com/system/resources/thumbnails/057/068/323/small/single-fresh-red-strawberry-on-table-green-background-food-fruit-sweet-macro-juicy-plant-image-photo.jpg" alt="imahe">
