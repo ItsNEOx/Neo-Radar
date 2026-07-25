@@ -302,6 +302,9 @@ start_neo_radar() {
         echo -e "${CLR_YELLOW}7) Check for Updates${CLR_RESET}"
         echo -e "${CLR_GRAY}   Compares local script version against GitHub main branch and updates in place.${CLR_RESET}\n"
 
+        echo -e "${CLR_YELLOW}HELP) Troubleshooting!${CLR_RESET}"
+        echo -e "${CLR_GRAY}   For troubleshooting help, go to https://github.com/ItsNEOx/Neo-Radar/blob/main/README.md${CLR_RESET}\n"
+
         show_end_options "true"
         return
     fi
