@@ -23,9 +23,17 @@ With NEO‑Radar, you don’t have to be a networking or cybersecurity professio
 NEO‑Radar is a simple program that easily runs the necessities included in “advanced” tools without requiring you to memorize the corresponding commands just to perform the bare minimum.
 NEO‑Radar handles the essentials with ease and is developed to be lightweight so it can run on any device.
 
+Now included with version 1.12+ is Nmap equivalents! Learn Nmap and its different functions by using this tool! A new option was added in update 1.12
+ is #8 Nmap Command Reference, which displays each of the NEO-Radar functions and how to do the same in Nmap!
+
 PLEASE use responsibly — ONLY on your own network(s) or on a network where you have EXPLICIT permission to run it.
 
 TROUBLESHOOTING!!! :
+
+Check for Updates mode might not work yet!!! currently trying to fix the kinks with that.
+IF YOU DOWNLOADED v1.11 AND ARE LOOKING TO UPDATE BUT THIS MODE IS NOT WORKING, YOU HAVE TO RE-INSTALLTHE PROGRAM AS v1.12.
+No need to uninstall the current version, just run the install script into your terminal, and it will pull the newest files.
+Sorry for this inconvenience .
 
 <i>
 ARP Device MAC Lookup & Vendor Identification DOES NOT WORK ON TERMUX!!!
