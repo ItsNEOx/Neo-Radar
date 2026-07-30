@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# ░▒▓█ NEO RADAR v1.11 █▓▒░
-
-VERSION="1.11"
-REPO_RAW_URL="https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/neoradar"
+# ░▒▓█ NEO RADAR v1.12 █▓▒░
 
 # ANSI Color Codes
 CLR_RESET="\033[0m"
@@ -17,82 +14,70 @@ CLR_DARKGRAY="\033[1;30m"
 CLR_RED="\033[1;31m"
 
 DEFAULT_PREFIX="192.168.0"
-COMMON_PORTS=(21 22 23 25 53 80 110 135 139 143 443 445 1433 3306 3389 5900 8080 8443)
+COMMON_PORTS=(21 22 23 25 53 80 110 135 139 143 443 445 993 995 1433 3306 3389 5900 8080 8443)
+KEY_PORTS=(22 23 80 139 443 445 3389)
 
-show_end_options() {
-    local suppress_save="$1"
-    shift
-    local output_data=("$@")
-    local action=""
-
-    echo ""
-    if [ "$suppress_save" = "true" ]; then
-        read -r -p "$(echo -e "${CLR_CYAN}[+] Press Enter or 'B' for Main Menu, or 'E' to Exit:${CLR_RESET} ")" action
-    else
-        read -r -p "$(echo -e "${CLR_CYAN}[+] Press Enter or 'B' for Main Menu, 'S' to Save Scan, or 'E' to Exit:${CLR_RESET} ")" action
-    fi
-
-    case "$action" in
-        [eE])
-            echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"
-            exit 0
-            ;;
-        [sS])
-            if [ "$suppress_save" = "true" ]; then
-                start_neo_radar
-                return
-            fi
-
-            if [ "${#output_data[@]}" -eq 0 ]; then
-                echo -e "  ${CLR_YELLOW}[-] No scan results available to save.${CLR_RESET}"
-            else
-                local default_file="Scan_Result_$(date +'%Y%m%d_%H%M%S').txt"
-                local file_path=""
-
-                if command -v zenity >/dev/null 2>&1; then
-                    file_path=$(zenity --file-selection --save --confirm-overwrite --filename="$default_file" 2>/dev/null)
-                elif command -v kdialog >/dev/null 2>&1; then
-                    file_path=$(kdialog --getsavefilename "$default_file" 2>/dev/null)
-                fi
-
-                if [ -z "$file_path" ]; then
-                    read -r -p "$(echo -e "${CLR_CYAN}Enter save file path (default: $default_file):${CLR_RESET} ")" user_path
-                    file_path="${user_path:-$default_file}"
-                fi
-
-                printf "%s\n" "${output_data[@]}" > "$file_path" 2>/dev/null
-                if [ $? -eq 0 ]; then
-                    echo -e "  ${CLR_GREEN}[+] Scan results successfully saved to: $file_path${CLR_RESET}"
-                else
-                    echo -e "  ${CLR_RED}[-] Error saving file to $file_path${CLR_RESET}"
-                fi
-            fi
-            show_end_options "$suppress_save" "${output_data[@]}"
-            ;;
-        *)
-            start_neo_radar
-            ;;
-    esac
+# --- Termux detection ---
+detect_termux() {
+    [ -n "$TERMUX_VERSION" ] || [ -f "/system/build.prop" ]
 }
 
-# --- Tested Hostname Resolver ---
-resolve_hostname() {
-    local ip="$1"
-    local name=""
+# --- IP validation ---
+validate_ip() {
+    local ip=$1 octets=() octet
+    IFS='.' read -ra octets <<< "$ip"
+    [ ${#octets[@]} -ne 4 ] && return 1
+    for octet in "${octets[@]}"; do
+        [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+        [ "$octet" -lt 0 -o "$octet" -gt 255 ] && return 1
+    done
+    return 0
+}
 
-    # 1. NetBIOS / Samba Lookup (nmblookup -A)
+# --- Port check (300ms timeout) ---
+check_port() {
+    local ip="$1" port="$2"
+    if command -v nc >/dev/null 2>&1; then
+        nc -z -w 1 "$ip" "$port" >/dev/null 2>&1
+        return $?
+    fi
+    timeout 1 bash -c "</dev/tcp/$ip/$port" >/dev/null 2>&1
+    return $?
+}
+
+# --- Batch port scan for a single host (all ports per call) ---
+scan_host_ports() {
+    local ip="$1" port
+    shift 1
+    for port in "$@"; do
+        if check_port "$ip" "$port"; then
+            echo "$port"
+        fi
+    done
+}
+
+# --- Hostname resolution (multi-method) ---
+resolve_hostname() {
+    local ip="$1" name=""
+
     if command -v nmblookup >/dev/null 2>&1; then
-        name=$(nmblookup -A "$ip" 2>/dev/null | grep -iE "<00>|<20>" | grep -iv "<GROUP>" | head -n 1 | awk '{print $1}')
+        name=$(nmblookup -A "$ip" 2>/dev/null | grep -E "<00>" | grep -v "<GROUP>" | head -1 | awk '{print $1}')
     fi
 
-    # 2. mDNS / Avahi (.local)
     if [ -z "$name" ] && command -v avahi-resolve >/dev/null 2>&1; then
         name=$(avahi-resolve -a "$ip" 2>/dev/null | awk '{print $2}')
     fi
 
-    # 3. Standard System / DNS Resolver
     if [ -z "$name" ]; then
         name=$(getent hosts "$ip" 2>/dev/null | awk '{print $2}')
+    fi
+
+    if [ -z "$name" ] && command -v nslookup >/dev/null 2>&1; then
+        name=$(nslookup "$ip" 2>/dev/null | grep "name = " | sed 's/.*name = //' | sed 's/\.$//' | head -1)
+    fi
+
+    if [ -z "$name" ] && command -v dig >/dev/null 2>&1; then
+        name=$(dig -x "$ip" +short 2>/dev/null | head -1)
     fi
 
     if [ -n "$name" ]; then
@@ -102,22 +87,18 @@ resolve_hostname() {
     fi
 }
 
-# --- Tested ARP MAC Capture ---
+# --- ARP MAC capture ---
 get_mac_address() {
-    local ip="$1"
-    local mac=""
+    local ip="$1" mac=""
 
-    # Extract MAC from ip neighbor
-    mac=$(ip neighbor show "$ip" 2>/dev/null | awk '{print $5}' | grep -E '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | tr 'a-z' 'A-Z' | head -n 1)
+    mac=$(ip neighbor show "$ip" 2>/dev/null | awk '{print $5}' | grep -E '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | tr 'a-z' 'A-Z' | head -1)
 
-    # Fallback to /proc/net/arp
     if [ -z "$mac" ] && [ -f /proc/net/arp ]; then
-        mac=$(grep -w "$ip" /proc/net/arp 2>/dev/null | awk '{print $4}' | grep -v "00:00:00:00:00:00" | tr 'a-z' 'A-Z' | head -n 1)
+        mac=$(grep -w "$ip" /proc/net/arp 2>/dev/null | awk '{print $4}' | grep -v "00:00:00:00:00:00" | tr 'a-z' 'A-Z' | head -1)
     fi
 
-    # Fallback to arp command
     if [ -z "$mac" ] && command -v arp >/dev/null 2>&1; then
-        mac=$(arp -n "$ip" 2>/dev/null | grep -w "$ip" | awk '{print $3}' | grep -E '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | tr 'a-z' 'A-Z' | head -n 1)
+        mac=$(arp -n "$ip" 2>/dev/null | grep -w "$ip" | awk '{print $3}' | grep -E '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}' | tr 'a-z' 'A-Z' | head -1)
     fi
 
     if [ -n "$mac" ]; then
@@ -127,7 +108,7 @@ get_mac_address() {
     fi
 }
 
-# --- Tested Local IEEE Vendor Lookup ---
+# --- OUI vendor lookup ---
 get_vendor() {
     local mac="$1"
     [ -z "$mac" ] || [ "$mac" = "Unavailable" ] && { echo "Unknown Vendor"; return; }
@@ -135,189 +116,392 @@ get_vendor() {
     local oui_clean
     oui_clean=$(echo "$mac" | tr -d ':-' | tr 'a-z' 'A-Z' | cut -c 1-6)
 
-    # Search local IEEE OUI file if present
     if [ -f /usr/share/ieee-data/oui.txt ]; then
         local match
-        match=$(grep -i "^$oui_clean" /usr/share/ieee-data/oui.txt 2>/dev/null | head -n 1 | cut -d')' -f2 | xargs)
-        if [ -n "$match" ]; then
-            echo "$match"
-            return
-        fi
+        match=$(grep -i "^$oui_clean" /usr/share/ieee-data/oui.txt 2>/dev/null | head -1 | cut -d')' -f2 | xargs)
+        if [ -n "$match" ]; then echo "$match"; return; fi
     fi
 
-    # Fallback common OUI Table
     case "$oui_clean" in
         005056|000C29|000569|00155D) echo "VMware / Hyper-V" ;;
-        080027|0A0027)               echo "Oracle VirtualBox" ;;
+        080027|0A0027)             echo "Oracle VirtualBox" ;;
         B827EB|D43A04|E45F01|2CCF67) echo "Raspberry Pi" ;;
         001A11|3C5AB4|F4F5DB|DAA119) echo "Google" ;;
         000393|000502|A483E7|1093E9) echo "Apple" ;;
         50C7BF|E848B8|001D0F|98DAC4) echo "TP-Link" ;;
         00146C|00184D|288023|A42B8C) echo "NETGEAR" ;;
         00166F|001E64|A44E31|8086F2) echo "Intel" ;;
-        *)                           echo "Unknown Vendor ($oui_clean)" ;;
+        *)                          echo "Unknown Vendor ($oui_clean)" ;;
     esac
 }
 
-check_port() {
-    local ip="$1"
-    local port="$2"
-    if command -v nc >/dev/null 2>&1; then
-        nc -z -w 1 "$ip" "$port" >/dev/null 2>&1
-    else
-        timeout 1 bash -c "</dev/tcp/$ip/$port" >/dev/null 2>&1
-    fi
-    return $?
-}
-
-# --- Option 7: Check for Updates ---
-check_for_updates() {
-    echo -e "${CLR_CYAN}[+] Checking GitHub for updates...${CLR_RESET}"
-    
-    if ! command -v curl >/dev/null 2>&1; then
-        echo -e "${CLR_RED}[-] Error: 'curl' is required to check for updates.${CLR_RESET}"
-        show_end_options "true"
-        return
-    fi
-
-    local remote_code
-    remote_code=$(curl -sSL "$REPO_RAW_URL" 2>/dev/null)
-
-    if [ -z "$remote_code" ]; then
-        echo -e "${CLR_RED}[-] Could not reach GitHub repository. Check network connection.${CLR_RESET}"
-        show_end_options "true"
-        return
-    fi
-
-    local remote_version
-    remote_version=$(echo "$remote_code" | grep -i '^VERSION=' | head -n 1 | cut -d'"' -f2)
-
-    if [ -z "$remote_version" ]; then
-        echo -e "${CLR_RED}[-] Could not parse remote version information.${CLR_RESET}"
-        show_end_options "true"
-        return
-    fi
-
-    echo -e "  Current Version: ${CLR_YELLOW}v$VERSION${CLR_RESET}"
-    echo -e "  Latest Version : ${CLR_GREEN}v$remote_version${CLR_RESET}"
-
-    if [ "$VERSION" = "$remote_version" ]; then
-        echo -e "\n${CLR_GREEN}[+] You are running the latest version of NEO RADAR!${CLR_RESET}"
-        show_end_options "true"
-        return
-    fi
-
-    echo -e "\n${CLR_YELLOW}[!] A new update (v$remote_version) is available!${CLR_RESET}"
-    read -r -p "$(echo -e "${CLR_CYAN}Would you like to download and update now? (y/N): ${CLR_RESET}")" update_choice
-
-    case "$update_choice" in
-        [yY][eE][sS]|[yY])
-            echo -e "\n${CLR_CYAN}[+] Downloading update...${CLR_RESET}"
-            local target_path="$0"
-            
-            if [ -w "$target_path" ]; then
-                echo "$remote_code" > "$target_path"
-                chmod +x "$target_path"
-            else
-                echo -e "${CLR_YELLOW}[!] Administrative privileges required to overwrite $target_path${CLR_RESET}"
-                echo "$remote_code" | sudo tee "$target_path" >/dev/null
-                sudo chmod +x "$target_path"
-            fi
-
-            echo -e "${CLR_GREEN}[+] Update complete! Restarting NEO RADAR...${CLR_RESET}"
-            sleep 1.5
-            exec "$target_path"
-            ;;
-        *)
-            echo -e "${CLR_GRAY}[-] Update cancelled.${CLR_RESET}"
-            show_end_options "true"
-            ;;
+# --- Service label for port ---
+port_service() {
+    case $1 in
+        22) echo "SSH" ;; 23) echo "Telnet" ;; 80) echo "HTTP" ;;
+        139) echo "NetBIOS" ;; 443) echo "HTTPS" ;; 445) echo "SMB" ;;
+        3389) echo "RDP" ;; *) echo "$1" ;;
     esac
 }
 
-start_neo_radar() {
+# --- Multi-signal OS fingerprinting ---
+fingerprint_os() {
+    local ip="$1" ttl="$2"
+    shift 2
+    local open_ports=("$@")
+    local sw=0 sl=0 sn=0 total=0 top=0 pct=0
+    local os="Unknown" conf="low" header="" nb=""
+
+    # TTL
+    if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then sw=$((sw + 2))
+    elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then sl=$((sl + 2))
+    elif [ "$ttl" -ge 240 ] && [ "$ttl" -le 255 ]; then sn=$((sn + 2))
+    fi
+
+    # Ports
+    for p in "${open_ports[@]}"; do
+        case $p in 445) sw=$((sw + 3)) ;; 139|3389) sw=$((sw + 2)) ;; 22) sl=$((sl + 2)) ;; 23) sn=$((sn + 2)) ;; esac
+    done
+
+    # HTTP Server header
+    header=$(echo -e "HEAD / HTTP/1.0\r\n\r\n" | timeout 1 nc "$ip" 80 2>/dev/null | grep -i "^Server:" | head -1)
+    if [ -n "$header" ]; then
+        echo "$header" | grep -qi "Microsoft-IIS" && sw=$((sw + 2))
+        echo "$header" | grep -qiE "Apache|nginx" && sl=$((sl + 1))
+    fi
+
+    # NetBIOS name
+    if command -v nmblookup >/dev/null 2>&1; then
+        nb=$(nmblookup -A "$ip" 2>/dev/null | grep -E "<00>" | grep -v "<GROUP>" | head -1 | awk '{print $1}')
+        [ -n "$nb" ] && sw=$((sw + 3))
+    fi
+
+    total=$((sw + sl + sn))
+    [ "$total" -eq 0 ] && { echo "Unknown|low"; return; }
+
+    if [ "$sw" -ge "$sl" ] && [ "$sw" -ge "$sn" ] && [ "$sw" -gt 0 ]; then os="Windows"; top=$sw
+    elif [ "$sl" -ge "$sw" ] && [ "$sl" -ge "$sn" ] && [ "$sl" -gt 0 ]; then os="Linux / macOS / Mobile"; top=$sl
+    elif [ "$sn" -gt 0 ]; then os="Cisco / Network Device"; top=$sn
+    fi
+
+    pct=$((top * 100 / total))
+    [ "$pct" -ge 80 ] && conf="very high"
+    [ "$pct" -ge 60 ] && conf="high"
+    [ "$pct" -ge 40 ] && conf="medium"
+
+    echo "$os|$conf"
+}
+
+# --- Loop-based end options (no recursion) ---
+show_end_options() {
+    local suppress_save="$1"
+    shift
+    local output_data=("$@")
+    local action=""
+
+    while true; do
+        echo ""
+        if [ "$suppress_save" = "true" ]; then
+            read -r -p "$(echo -e "${CLR_CYAN}[+] Press Enter or 'B' for Main Menu, or 'E' to Exit:${CLR_RESET} ")" action
+        else
+            read -r -p "$(echo -e "${CLR_CYAN}[+] Press Enter or 'B' for Main Menu, 'S' to Save Scan, or 'E' to Exit:${CLR_RESET} ")" action
+        fi
+
+        case "$action" in
+            [eE])
+                echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"
+                exit 0
+                ;;
+            [sS])
+                if [ "$suppress_save" = "true" ]; then
+                    start_neo_scanner
+                    return
+                fi
+                if [ "${#output_data[@]}" -eq 0 ]; then
+                    echo -e "  ${CLR_YELLOW}[-] No scan results available to save.${CLR_RESET}"
+                else
+                    local default_file="Scan_Result_$(date +'%Y%m%d_%H%M%S').txt"
+                    local file_path=""
+
+                    if command -v zenity >/dev/null 2>&1; then
+                        file_path=$(zenity --file-selection --save --confirm-overwrite --filename="$default_file" 2>/dev/null)
+                    elif command -v kdialog >/dev/null 2>&1; then
+                        file_path=$(kdialog --getsavefilename "$default_file" 2>/dev/null)
+                    fi
+
+                    if [ -z "$file_path" ]; then
+                        read -r -p "$(echo -e "${CLR_CYAN}Enter save file path (default: $default_file):${CLR_RESET} ")" user_path
+                        file_path="${user_path:-$default_file}"
+                    fi
+
+                    printf "%s\n" "${output_data[@]}" > "$file_path" 2>/dev/null
+                    if [ $? -eq 0 ]; then
+                        echo -e "  ${CLR_GREEN}[+] Scan results saved to: $file_path${CLR_RESET}"
+                    else
+                        echo -e "  ${CLR_RED}[-] Error saving file to $file_path${CLR_RESET}"
+                    fi
+                fi
+                ;;
+            [bB]|"")
+                start_neo_scanner
+                return
+                ;;
+        esac
+    done
+}
+
+# ====================================================================
+# Main Scanner
+# ====================================================================
+start_neo_scanner() {
     clear
     echo ""
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v$VERSION █▓▒░           ${CLR_RESET}"
+    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.12 █▓▒░          ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_MAGENTA}             Created By ItsNEOx             ${CLR_RESET}"
+    echo -e "${CLR_MAGENTA}            Created By ItsNEOx              ${CLR_RESET}"
     echo -e "${CLR_DARKCYAN}      The super simple network scanner      ${CLR_RESET}"
     echo -e "${CLR_DARKGRAY}            for legal purposes              ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
     echo ""
+
+    # Termux check
+    if detect_termux; then
+        echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
+        echo -e "${CLR_YELLOW} [!] ANDROID/TERMUX DETECTED${CLR_RESET}"
+        echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
+        echo -e "${CLR_GRAY} Android locks ARP table access for security.${CLR_RESET}"
+        echo -e "${CLR_YELLOW} Mode 4 (ARP MAC Lookup) will not return results.${CLR_RESET}"
+        echo -e "${CLR_GRAY} All other modes work fine on Termux.${CLR_RESET}"
+        echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
+        echo ""
+    fi
 
     echo -e "${CLR_CYAN}Choose scan mode:${CLR_RESET}"
     echo "1) Network Ping Scan"
     echo "2) Single Host Inspection (Ports + Hostname + OS)"
     echo "3) Ping + TCP port scan"
     echo "4) ARP Device MAC Lookup & Vendor Identification"
-    echo "5) Hostname Scan & Fingerprinting"
+    echo "5) Hostname Scan & Fingerprinting (enhanced OS detection)"
     echo "6) Help / Feature Guide"
     echo "7) Check for Updates"
+    echo "8) Nmap Command Reference"
     echo "E) Exit Program"
     echo ""
 
-    read -r -p "Enter option number or 'E' to Exit (default: 1): " mode
-    [ -z "$mode" ] && mode=1
-
-    case "$mode" in
-        [eE])
-            echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"
-            exit 0
-            ;;
-    esac
+    while true; do
+        read -r -p "Enter option number or 'E' to Exit (default: 1): " mode
+        [ -z "$mode" ] && mode=1
+        case "$mode" in
+            [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
+            [1-8]) break ;;
+            *) echo -e "  ${CLR_YELLOW}[!] Please enter a number between 1 and 8, or 'E' to exit.${CLR_RESET}" ;;
+        esac
+    done
 
     echo ""
 
-    # Mode 7 — Update Check
-    if [ "$mode" = "7" ]; then
-        check_for_updates
-        return
-    fi
-
-    # Mode 6 — Help
+    # ---------------------------------------------------------
+    # Mode 6 — Help / Feature Guide
+    # ---------------------------------------------------------
     if [ "$mode" = "6" ]; then
         echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-        echo -e "${CLR_CYAN}          NEO RADAR - HELP & GUIDE          ${CLR_RESET}"
+        echo -e "${CLR_CYAN}         NEO RADAR - HELP & GUIDE           ${CLR_RESET}"
         echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
         echo ""
-        
+
         echo -e "${CLR_YELLOW}1) Network Ping Scan${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Multi-threaded ICMP sweep across a range of IPs to find online hosts.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Multi-threaded ICMP sweep to find online hosts.${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}2) Single Host Inspection${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Checks Ping response, TTL OS estimation, DNS/mDNS/NBT hostnames,${CLR_RESET}"
-        echo -e "${CLR_GRAY}   and scans key management ports.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Ping, TTL OS estimation, DNS/mDNS/NBT hostnames,${CLR_RESET}"
+        echo -e "${CLR_GRAY}   and batched port scan on one IP.${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}3) Ping + TCP Port Scan${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Discovers active hosts on the subnet, then attempts fast TCP handshakes.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Discover active hosts, then scan all common TCP ports${CLR_RESET}"
+        echo -e "${CLR_GRAY}   per host in a single batch (faster).${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}4) ARP Device MAC Lookup & Vendor Identification${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Queries kernel ARP tables to map IP addresses to physical MACs and Vendors.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Queries kernel ARP tables for MAC addresses and vendors.${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}5) Hostname Scan & Fingerprinting${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Resolves DNS, mDNS, and NetBIOS hostnames, estimating OS based on ICMP TTL.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Resolves hostnames (DNS, mDNS, NetBIOS) with enhanced${CLR_RESET}"
+        echo -e "${CLR_GRAY}   multi-signal OS detection (TTL + ports + HTTP + NetBIOS).${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}7) Check for Updates${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Compares local script version against GitHub main branch and updates in place.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Checks GitHub for new releases.${CLR_RESET}\n"
 
-        echo -e "${CLR_YELLOW}HELP) Troubleshooting!${CLR_RESET}"
-        echo -e "${CLR_GRAY}   For troubleshooting help, go to https://github.com/ItsNEOx/Neo-Radar/blob/main/README.md${CLR_RESET}\n"
+        echo -e "${CLR_YELLOW}8) Nmap Command Reference${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Shows equivalent Nmap commands for each scan mode.${CLR_RESET}\n"
+
+        echo -e "${CLR_RED}Android/Termux Note:${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Works on Termux, but Android locks ARP table access.${CLR_RESET}"
+        echo -e "${CLR_YELLOW}   Mode 4 (ARP MAC Lookup) will NOT return results.${CLR_RESET}"
+        echo -e "${CLR_GRAY}   All other modes work fine.${CLR_RESET}\n"
 
         show_end_options "true"
         return
     fi
 
+    # ---------------------------------------------------------
+    # Mode 7 — Check for Updates
+    # ---------------------------------------------------------
+    if [ "$mode" = "7" ]; then
+        local_version="1.12"
+        local_repo_raw="https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/neoradar"
+        local_repo_web="https://github.com/ItsNEOx/Neo-Radar"
+
+        echo -e "${CLR_CYAN}[+] Checking GitHub for updates...${CLR_RESET}"
+
+        remote_code=""
+        if command -v curl >/dev/null 2>&1; then
+            remote_code=$(curl -sSL --connect-timeout 5 "$local_repo_raw" 2>/dev/null)
+        elif command -v wget >/dev/null 2>&1; then
+            remote_code=$(wget -qO- --timeout=5 "$local_repo_raw" 2>/dev/null)
+        fi
+
+        if [ -n "$remote_code" ]; then
+            remote_version=$(echo "$remote_code" | grep -oP 'v\d+\.\d+' | head -1 | tr -d 'v')
+            echo -e "  ${CLR_YELLOW}Current Version: v$local_version${CLR_RESET}"
+            if [ -n "$remote_version" ]; then
+                echo -e "  ${CLR_GREEN}Latest Version : v$remote_version${CLR_RESET}"
+                if [ "$remote_version" != "$local_version" ]; then
+                    echo -e "\n${CLR_YELLOW}[!] A new update (v$remote_version) is available!${CLR_RESET}"
+                    read -r -p "$(echo -e "${CLR_CYAN}[+] Open GitHub page to download? (y/N): ${CLR_RESET}")" choice
+                    case "$choice" in
+                        [yY])
+                            if command -v xdg-open >/dev/null 2>&1; then
+                                xdg-open "$local_repo_web" 2>/dev/null
+                            elif command -v termux-open-url >/dev/null 2>&1; then
+                                termux-open-url "$local_repo_web" 2>/dev/null
+                            else
+                                echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
+                            fi
+                            ;;
+                    esac
+                else
+                    echo -e "\n${CLR_GREEN}[+] You are running the latest version!${CLR_RESET}"
+                fi
+            else
+                echo -e "  ${CLR_RED}[-] Could not parse version. Opening page...${CLR_RESET}"
+                if command -v xdg-open >/dev/null 2>&1; then
+                    xdg-open "$local_repo_web" 2>/dev/null
+                elif command -v termux-open-url >/dev/null 2>&1; then
+                    termux-open-url "$local_repo_web" 2>/dev/null
+                else
+                    echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
+                fi
+            fi
+        else
+            echo -e "  ${CLR_RED}[-] Could not reach GitHub. Opening repository page...${CLR_RESET}"
+            if command -v xdg-open >/dev/null 2>&1; then
+                xdg-open "$local_repo_web" 2>/dev/null
+            elif command -v termux-open-url >/dev/null 2>&1; then
+                termux-open-url "$local_repo_web" 2>/dev/null
+            else
+                echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
+            fi
+        fi
+
+        show_end_options "true"
+        return
+    fi
+
+    # ---------------------------------------------------------
+    # Mode 8 — Nmap Command Reference
+    # ---------------------------------------------------------
+    if [ "$mode" = "8" ]; then
+        clear
+        echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
+        echo -e "${CLR_CYAN}       NEO RADAR - Nmap Command Guide       ${CLR_RESET}"
+        echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
+        echo -e "${CLR_YELLOW}   How to perform each scan mode with Nmap ${CLR_RESET}"
+        echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_YELLOW}1) Network Ping Scan${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: ICMP sweep across a range of IPs.${CLR_RESET}"
+        echo -e "   ${CLR_GREEN}Nmap:      nmap -sn 192.168.0.0/24${CLR_RESET}"
+        echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-sn  -> Ping sweep only (no port scan)${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}/24  -> CIDR notation for 192.168.0.1-254${CLR_RESET}"
+        echo -e "   ${CLR_GRAY}Sends ICMP echo, TCP SYN to 443, TCP ACK to 80,${CLR_RESET}"
+        echo -e "   ${CLR_GRAY}and ICMP timestamp requests simultaneously.${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_YELLOW}2) Single Host Inspection${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: Ping + TTL OS guess + DNS + port scan.${CLR_RESET}"
+        echo -e "   ${CLR_GREEN}Nmap:      nmap -A 192.168.0.1${CLR_RESET}"
+        echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-A  -> Aggressive (-O -sV -sC --traceroute)${CLR_RESET}"
+        echo -e "   ${CLR_GRAY}Use -p- to scan all 65535 ports.${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_YELLOW}3) Ping + TCP Port Scan${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: Discover hosts, scan common TCP ports.${CLR_RESET}"
+        echo -e "   ${CLR_GREEN}Nmap:      nmap -sS 192.168.0.0/24 -p 21,22,23,25,53,80,110,${CLR_RESET}"
+        echo -e "     ${CLR_GREEN}135,139,143,443,445,993,995,1433,${CLR_RESET}"
+        echo -e "     ${CLR_GREEN}3306,3389,5900,8080,8443${CLR_RESET}"
+        echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-sS -> SYN scan (half-open, requires root)${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-sT -> TCP connect scan (no root needed)${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-p  -> Port list or range${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_YELLOW}4) ARP MAC Lookup & Vendor Identification${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: Queries ARP table for MAC addresses.${CLR_RESET}"
+        echo -e "   ${CLR_GREEN}Nmap:      nmap -PR 192.168.0.0/24${CLR_RESET}"
+        echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-PR -> ARP ping (local subnet, fastest)${CLR_RESET}"
+        echo -e "   ${CLR_GRAY}ARP is Layer-2, local subnet only.${CLR_RESET}"
+        echo -e "   ${CLR_GRAY}MACs also appear in standard -sn output.${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_YELLOW}5) Hostname Scan & Fingerprinting${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: Hostname resolution + multi-signal OS.${CLR_RESET}"
+        echo -e "   ${CLR_GREEN}Nmap:      nmap -sL 192.168.0.0/24  (DNS lookup)${CLR_RESET}"
+        echo -e "     ${CLR_GREEN}nmap -O 192.168.0.0/24       (OS detection)${CLR_RESET}"
+        echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-sL -> List scan / reverse-DNS${CLR_RESET}"
+        echo -e "     ${CLR_DARKGRAY}-O  -> OS fingerprinting (TCP/IP stack)${CLR_RESET}"
+        echo ""
+
+        echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
+        echo -e "${CLR_CYAN} Quick Reference${CLR_RESET}"
+        echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
+        echo -e "  ${CLR_GREEN}-sn${CLR_RESET}       Ping sweep host discovery"
+        echo -e "  ${CLR_GREEN}-sS${CLR_RESET}       SYN half-open scan (requires root)"
+        echo -e "  ${CLR_GREEN}-sT${CLR_RESET}       TCP connect scan"
+        echo -e "  ${CLR_GREEN}-sV${CLR_RESET}       Service/version detection"
+        echo -e "  ${CLR_GREEN}-O${CLR_RESET}        OS fingerprinting"
+        echo -e "  ${CLR_GREEN}-sC${CLR_RESET}       Default NSE script scan"
+        echo -e "  ${CLR_GREEN}-A${CLR_RESET}        Aggressive (-O -sV -sC --traceroute)"
+        echo -e "  ${CLR_GREEN}-PR${CLR_RESET}       ARP ping (local subnet)"
+        echo -e "  ${CLR_GREEN}-sL${CLR_RESET}       List scan / DNS resolution"
+        echo -e "  ${CLR_GREEN}-p <n>${CLR_RESET}    Port range"
+        echo -e "  ${CLR_GREEN}-T<0-5>${CLR_RESET}   Timing template (T4 faster)"
+        echo -e "  ${CLR_GREEN}-v${CLR_RESET}        Increase verbosity"
+        echo -e "  ${CLR_GREEN}--reason${CLR_RESET}  Shows why Nmap concluded a state"
+        echo ""
+
+        show_end_options "true"
+        return
+    fi
+
+    # ---------------------------------------------------------
     # Mode 2 — Single Host Inspection
+    # ---------------------------------------------------------
     if [ "$mode" = "2" ]; then
         echo -e "${CLR_DARKGRAY}Enter 'B' for Main Menu, or 'E' to Exit.${CLR_RESET}"
-        read -r -p "Enter target IP address (Example : 192.168.0.1): " target_ip
-
-        case "$target_ip" in
-            [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-            [bB]|"") start_neo_radar; return ;;
-        esac
+        while true; do
+            read -r -p "Enter target IP address (Example : 192.168.0.1): " target_ip
+            case "$target_ip" in
+                [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
+                [bB]|"") start_neo_scanner; return ;;
+            esac
+            if validate_ip "$target_ip"; then break; fi
+            echo -e "  ${CLR_YELLOW}[!] Invalid IP format. Use the form 192.168.0.1${CLR_RESET}"
+        done
 
         echo -e "\n${CLR_CYAN}[+] Inspecting single host: $target_ip...${CLR_RESET}"
 
@@ -331,43 +515,37 @@ start_neo_radar() {
         echo -e "  ${CLR_GREEN}[+] Host Status: ONLINE${CLR_RESET}"
 
         ttl=$(echo "$ping_out" | grep -i "ttl=" | sed -e 's/.*ttl=//i' | awk '{print $1}')
-        os="Unknown"
-        if [ -n "$ttl" ]; then
-            if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then os="Windows"
-            elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then os="Linux / macOS / Mobile"
-            elif [ "$ttl" -ge 240 ]; then os="Cisco / Network Device"
-            fi
-        else
-            ttl="N/A"
+        [ -z "$ttl" ] && ttl="N/A"
+
+        # Batched port scan (all ports per host in one job)
+        echo -e "  ${CLR_CYAN}[+] Scanning ${#COMMON_PORTS[@]} common ports...${CLR_RESET}"
+        tmp_dir=$(mktemp -d)
+        (
+            for port in "${COMMON_PORTS[@]}"; do
+                if check_port "$target_ip" "$port"; then
+                    echo "$port" >> "$tmp_dir/ports"
+                fi
+            done
+        ) &
+        wait
+        open_ports=()
+        if [ -f "$tmp_dir/ports" ]; then
+            while IFS= read -r p; do open_ports+=("$p"); done < "$tmp_dir/ports"
         fi
+        rm -rf "$tmp_dir"
+
+        # OS fingerprinting with multi-signal
+        os_result=$(fingerprint_os "$target_ip" "$ttl" "${open_ports[@]}")
+        os="${os_result%|*}"
+        confidence="${os_result#*|}"
 
         host_name=$(resolve_hostname "$target_ip")
-
-        echo -e "  ${CLR_CYAN}[+] Scanning ${#COMMON_PORTS[@]} common ports...${CLR_RESET}"
-        
-        tmp_dir=$(mktemp -d)
-        for port in "${COMMON_PORTS[@]}"; do
-            (
-                if check_port "$target_ip" "$port"; then
-                    echo "$port" > "$tmp_dir/$port"
-                fi
-            ) &
-        done
-        wait
-
-        open_ports=()
-        for port in "${COMMON_PORTS[@]}"; do
-            if [ -f "$tmp_dir/$port" ]; then
-                open_ports+=("$port")
-            fi
-        done
-        rm -rf "$tmp_dir"
 
         echo -e "\n${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
         echo -e "${CLR_CYAN} Host Details: $target_ip${CLR_RESET}"
         echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
         echo -e "  ${CLR_GREEN}Hostname : $host_name${CLR_RESET}"
-        echo -e "  ${CLR_GREEN}OS Family: $os (TTL: $ttl)${CLR_RESET}"
+        echo -e "  ${CLR_GREEN}OS Family: $os (TTL: $ttl, confidence: $confidence)${CLR_RESET}"
 
         if [ "${#open_ports[@]}" -gt 0 ]; then
             ports_text=$(IFS=', '; echo "${open_ports[*]}")
@@ -383,7 +561,7 @@ start_neo_radar() {
             " Timestamp : $(date)"
             " Target IP : $target_ip"
             " Hostname  : $host_name"
-            " OS Family : $os (TTL: $ttl)"
+            " OS Family : $os (TTL: $ttl, confidence: $confidence)"
             " Open Ports: $ports_text"
             "============================================"
         )
@@ -392,35 +570,64 @@ start_neo_radar() {
         return
     fi
 
+    # ---------------------------------------------------------
     # Subnet Prompt (Modes 1, 3, 4, 5)
+    # ---------------------------------------------------------
     echo -e "${CLR_DARKGRAY}Enter 'B' for Main Menu, or 'E' to Exit.${CLR_RESET}"
     read -r -p "Enter target network prefix (default: $DEFAULT_PREFIX): " prefix_input
-
     case "$prefix_input" in
         [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_radar; return ;;
+        [bB]) start_neo_scanner; return ;;
     esac
     prefix="${prefix_input:-$DEFAULT_PREFIX}"
 
-    read -r -p "Enter starting host number (default: 1): " start_input
-    case "$start_input" in
-        [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_radar; return ;;
-    esac
-    start_host="${start_input:-1}"
+    while true; do
+        read -r -p "Enter starting host number (1-255, default: 1): " start_input
+        case "$start_input" in
+            [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
+            [bB]) start_neo_scanner; return ;;
+            "") start_host=1; break ;;
+            *[!0-9]*) echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}" ;;
+            *)
+                if [ "$start_input" -ge 1 ] && [ "$start_input" -le 255 ] 2>/dev/null; then
+                    start_host=$start_input; break
+                else
+                    echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}"
+                fi
+                ;;
+        esac
+    done
 
-    read -r -p "Enter ending host number (default: 254): " end_input
-    case "$end_input" in
-        [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_radar; return ;;
-    esac
-    end_host="${end_input:-254}"
+    while true; do
+        read -r -p "Enter ending host number (1-255, default: 254): " end_input
+        case "$end_input" in
+            [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
+            [bB]) start_neo_scanner; return ;;
+            "") end_host=254; break ;;
+            *[!0-9]*) echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}" ;;
+            *)
+                if [ "$end_input" -ge 1 ] && [ "$end_input" -le 255 ] 2>/dev/null; then
+                    end_host=$end_input; break
+                else
+                    echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}"
+                fi
+                ;;
+        esac
+    done
+
+    if [ "$start_host" -gt "$end_host" ]; then
+        echo -e "  ${CLR_YELLOW}[!] Starting host cannot be greater than ending host.${CLR_RESET}"
+        start_neo_scanner
+        return
+    fi
 
     echo -e "\n${CLR_CYAN}[+] Starting live sweep on $prefix.$start_host through $prefix.$end_host...${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
 
+    # ---------------------------------------------------------
+    # Ping Sweep Engine
+    # ---------------------------------------------------------
     tmp_ping_dir=$(mktemp -d)
-
     for (( i=start_host; i<=end_host; i++ )); do
         (
             ip="$prefix.$i"
@@ -432,19 +639,14 @@ start_neo_radar() {
                 echo -e "  ${CLR_GREEN}[+] Discovered: $ip [RTT: ${rtt}ms]${CLR_RESET}"
             fi
         ) &
-        
         running_jobs=$(jobs -r -p | wc -l)
-        if [ "$running_jobs" -ge 64 ]; then
-            sleep 0.02
-        fi
+        [ "$running_jobs" -ge 64 ] && sleep 0.02
     done
     wait
 
     alive=()
     for (( i=start_host; i<=end_host; i++ )); do
-        if [ -f "$tmp_ping_dir/$i" ]; then
-            alive+=("$prefix.$i")
-        fi
+        [ -f "$tmp_ping_dir/$i" ] && alive+=("$prefix.$i")
     done
     rm -rf "$tmp_ping_dir"
 
@@ -457,12 +659,12 @@ start_neo_radar() {
         return
     fi
 
+    # ---------------------------------------------------------
     # Mode 1 — Network Ping Scan
+    # ---------------------------------------------------------
     if [ "$mode" = "1" ]; then
         echo -e "\n${CLR_CYAN}Sorted Active Hosts:${CLR_RESET}"
-        for h in "${alive[@]}"; do
-            echo -e "  ${CLR_GREEN}[+] $h${CLR_RESET}"
-        done
+        for h in "${alive[@]}"; do echo -e "  ${CLR_GREEN}[+] $h${CLR_RESET}"; done
 
         scan_log=(
             "============================================"
@@ -479,25 +681,23 @@ start_neo_radar() {
         return
     fi
 
-    # Mode 3 — Ping + TCP port scan
+    # ---------------------------------------------------------
+    # Mode 3 — Ping + TCP Port Scan (BATCHED per host)
+    # ---------------------------------------------------------
     if [ "$mode" = "3" ]; then
         echo -e "\n${CLR_CYAN}[+] Scanning ${#COMMON_PORTS[@]} common TCP ports across active hosts...${CLR_RESET}"
 
         tmp_port_dir=$(mktemp -d)
-
         for target in "${alive[@]}"; do
-            for port in "${COMMON_PORTS[@]}"; do
-                (
+            (
+                for port in "${COMMON_PORTS[@]}"; do
                     if check_port "$target" "$port"; then
-                        echo "OPEN" > "$tmp_port_dir/${target}_${port}"
+                        echo "$port" >> "$tmp_port_dir/$target"
                     fi
-                ) &
-
-                running_jobs=$(jobs -r -p | wc -l)
-                if [ "$running_jobs" -ge 100 ]; then
-                    sleep 0.01
-                fi
-            done
+                done
+            ) &
+            running_jobs=$(jobs -r -p | wc -l)
+            [ "$running_jobs" -ge 64 ] && sleep 0.02
         done
         wait
 
@@ -516,20 +716,18 @@ start_neo_radar() {
             echo -e "\n${CLR_YELLOW}Host: $target${CLR_RESET}"
             echo -e "${CLR_DARKMAGENTA}-------------------------${CLR_RESET}"
             scan_log+=("" "Host: $target")
-
             has_open=0
             for port in "${COMMON_PORTS[@]}"; do
-                if [ -f "$tmp_port_dir/${target}_${port}" ]; then
+                if [ -f "$tmp_port_dir/$target" ] && grep -qw "$port" "$tmp_port_dir/$target" 2>/dev/null; then
                     echo -e "  ${CLR_GREEN}[+] Port $port : OPEN${CLR_RESET}"
                     scan_log+=("  [+] Port $port : OPEN")
                     has_open=1
                 fi
             done
-
-            if [ "$has_open" -eq 0 ]; then
-                echo -e "  ${CLR_DARKGRAY}[-] No open target ports found.${CLR_RESET}"
-                scan_log+=("  [-] No open target ports found.")
-            fi
+            [ "$has_open" -eq 0 ] && {
+                echo -e "  ${CLR_DARKGRAY}[-] No open ports found.${CLR_RESET}"
+                scan_log+=("  [-] No open ports found.")
+            }
         done
         scan_log+=("============================================")
         rm -rf "$tmp_port_dir"
@@ -538,16 +736,14 @@ start_neo_radar() {
         return
     fi
 
-    # Mode 4 — Fast ARP Device Identification & Vendor Lookup
+    # ---------------------------------------------------------
+    # Mode 4 — Fast ARP Device Identification (single broadcast)
+    # ---------------------------------------------------------
     if [ "$mode" = "4" ]; then
-        echo -e "\n${CLR_CYAN}[+] Refreshing ARP entries for active targets...${CLR_RESET}"
+        echo -e "\n${CLR_CYAN}[+] Refreshing ARP entries with broadcast ping...${CLR_RESET}"
 
-        # Send unicast ping to ensure ARP table populates in the Linux kernel
-        for ip in "${alive[@]}"; do
-            ping -c 2 -W 1 "$ip" >/dev/null 2>&1 &
-        done
-        wait
-        sleep 0.2
+        ping -c 1 -W 1 -b "$prefix.255" >/dev/null 2>&1
+        sleep 0.3
 
         echo -e "\n${CLR_CYAN}Device MAC Addresses & Manufacturer Identification:${CLR_RESET}"
 
@@ -577,7 +773,9 @@ start_neo_radar() {
         return
     fi
 
-    # Mode 5 — Hostname Scan & Fingerprinting
+    # ---------------------------------------------------------
+    # Mode 5 — Hostname Scan & Fingerprinting (multi-signal)
+    # ---------------------------------------------------------
     if [ "$mode" = "5" ]; then
         echo -e "\n${CLR_CYAN}[+] Resolving Hostnames & OS Profiling...${CLR_RESET}"
 
@@ -589,16 +787,29 @@ start_neo_radar() {
 
                 ping_out=$(ping -c 1 -W 1 "$target" 2>/dev/null)
                 ttl=$(echo "$ping_out" | grep -i "ttl=" | sed -e 's/.*ttl=//i' | awk '{print $1}')
-                
-                os="Unknown"
-                if [ -n "$ttl" ]; then
-                    if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then os="Windows"
-                    elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then os="Linux / macOS / Mobile"
-                    elif [ "$ttl" -ge 240 ]; then os="Cisco / Network Device"
-                    fi
-                fi
+                [ -z "$ttl" ] && ttl=0
 
-                echo "Host: $host_name | OS: $os" > "$tmp_host_dir/$target"
+                # Probe key ports for OS fingerprinting
+                open_ports=()
+                for port in "${KEY_PORTS[@]}"; do
+                    if check_port "$target" "$port"; then
+                        open_ports+=("$port")
+                    fi
+                done
+
+                os_result=$(fingerprint_os "$target" "$ttl" "${open_ports[@]}")
+                os="${os_result%|*}"
+                confidence="${os_result#*|}"
+
+                # Build port hint string
+                hint=""
+                for p in "${open_ports[@]}"; do
+                    [ -n "$hint" ] && hint="$hint, "
+                    hint="$hint$(port_service $p)"
+                done
+                [ -n "$hint" ] && hint=" [$hint]"
+
+                echo "Host: $host_name | OS: $os (confidence: $confidence)$hint" > "$tmp_host_dir/$target"
             ) &
         done
         wait
@@ -630,4 +841,4 @@ start_neo_radar() {
     show_end_options "false"
 }
 
-start_neo_radar
+start_neo_scanner
