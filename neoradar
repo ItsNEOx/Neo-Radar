@@ -669,40 +669,44 @@ start_neo_scanner() {
                 echo -e "  ${CLR_GREEN}Latest Version : v$remote_version${CLR_RESET}"
                 if [ "$remote_version" != "$local_version" ]; then
                     echo -e "\n${CLR_YELLOW}[!] A new update (v$remote_version) is available!${CLR_RESET}"
-                    read -r -p "$(echo -e "${CLR_CYAN}[+] Open GitHub page to download? (y/N): ${CLR_RESET}")" choice
+                    read -r -p "$(echo -e "${CLR_CYAN}[+] Download and install update? (y/N): ${CLR_RESET}")" choice
                     case "$choice" in
                         [yY])
-                            if command -v xdg-open >/dev/null 2>&1; then
-                                xdg-open "$local_repo_web" 2>/dev/null
-                            elif command -v termux-open-url >/dev/null 2>&1; then
-                                termux-open-url "$local_repo_web" 2>/dev/null
-                            else
-                                echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
+                            tmp_file=$(mktemp)
+                            dl_ok=0
+                            if command -v curl >/dev/null 2>&1; then
+                                curl -sSL --connect-timeout 10 "$local_repo_raw" -o "$tmp_file" 2>/dev/null && dl_ok=1
+                            elif command -v wget >/dev/null 2>&1; then
+                                wget -q --timeout=10 "$local_repo_raw" -O "$tmp_file" 2>/dev/null && dl_ok=1
                             fi
+                            if [ "$dl_ok" = "1" ] && [ -s "$tmp_file" ] && grep -q "NEO RADAR" "$tmp_file"; then
+                                if [ -w "$0" ]; then
+                                    cat "$tmp_file" > "$0" && chmod +x "$0" && echo -e "  ${CLR_GREEN}[+] Update to v$remote_version complete!${CLR_RESET}" || echo -e "  ${CLR_RED}[-] Failed to write update.${CLR_RESET}"
+                                else
+                                    echo -e "  ${CLR_YELLOW}[-] Cannot write to $0 (permission).${CLR_RESET}"
+                                    echo -e "  ${CLR_YELLOW}    Run: sudo $0${CLR_RESET}"
+                                fi
+                                rm -f "$tmp_file"
+                            else
+                                echo -e "  ${CLR_RED}[-] Download failed or file corrupted.${CLR_RESET}"
+                                echo -e "  ${CLR_YELLOW}    Visit: $local_repo_web${CLR_RESET}"
+                                rm -f "$tmp_file"
+                            fi
+                            ;;
+                        *)
+                            echo -e "  ${CLR_YELLOW}    Visit: $local_repo_web${CLR_RESET}"
                             ;;
                     esac
                 else
                     echo -e "\n${CLR_GREEN}[+] You are running the latest version!${CLR_RESET}"
                 fi
             else
-                echo -e "  ${CLR_RED}[-] Could not parse version. Opening page...${CLR_RESET}"
-                if command -v xdg-open >/dev/null 2>&1; then
-                    xdg-open "$local_repo_web" 2>/dev/null
-                elif command -v termux-open-url >/dev/null 2>&1; then
-                    termux-open-url "$local_repo_web" 2>/dev/null
-                else
-                    echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
-                fi
+                echo -e "  ${CLR_RED}[-] Could not parse version.${CLR_RESET}"
+                echo -e "  ${CLR_YELLOW}    Visit: $local_repo_web${CLR_RESET}"
             fi
         else
-            echo -e "  ${CLR_RED}[-] Could not reach GitHub. Opening repository page...${CLR_RESET}"
-            if command -v xdg-open >/dev/null 2>&1; then
-                xdg-open "$local_repo_web" 2>/dev/null
-            elif command -v termux-open-url >/dev/null 2>&1; then
-                termux-open-url "$local_repo_web" 2>/dev/null
-            else
-                echo -e "  ${CLR_YELLOW}Visit: $local_repo_web${CLR_RESET}"
-            fi
+            echo -e "  ${CLR_RED}[-] Could not reach GitHub.${CLR_RESET}"
+            echo -e "  ${CLR_YELLOW}    Visit: $local_repo_web${CLR_RESET}"
         fi
 
         show_end_options "true"
