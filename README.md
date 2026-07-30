@@ -1,4 +1,4 @@
-# ░▒▓█ NEO RADAR v1.11 █▓▒░
+# ░▒▓█ NEO RADAR v1.12 █▓▒░
 
 The super simple, lightweight network scanner for Linux (Works in Termux too!).
 
