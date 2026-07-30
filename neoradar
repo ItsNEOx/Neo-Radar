@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ░▒▓█ NEO RADAR v1.12 █▓▒░
+# ░▒▓█ NEO RADAR v1.13 █▓▒░
 
 # ANSI Color Codes
 CLR_RESET="\033[0m"
@@ -15,7 +15,8 @@ CLR_RED="\033[1;31m"
 
 DEFAULT_PREFIX="192.168.0"
 COMMON_PORTS=(21 22 23 25 53 80 110 135 139 143 443 445 993 995 1433 3306 3389 5900 8080 8443)
-KEY_PORTS=(22 23 80 139 443 445 3389)
+KEY_PORTS=(22 23 80 139 443 445 3389 5000 5555 62078)
+declare -A OUI_CACHE
 
 # --- Termux detection ---
 detect_termux() {
@@ -108,31 +109,288 @@ get_mac_address() {
     fi
 }
 
-# --- OUI vendor lookup ---
+# --- Populate OUI vendor cache ---
+load_oui_cache() {
+    OUI_CACHE=()
+    # Virtualization
+    OUI_CACHE[005056]="VMware"; OUI_CACHE[000C29]="VMware"; OUI_CACHE[000569]="VMware"
+    OUI_CACHE[080027]="Oracle VirtualBox"; OUI_CACHE[0A0027]="Oracle VirtualBox"
+    OUI_CACHE[00155D]="Microsoft Hyper-V"; OUI_CACHE[0003FF]="Microsoft"
+    OUI_CACHE[00163E]="Xen / Citrix"; OUI_CACHE[000E0C]="Xen / Citrix"
+    OUI_CACHE[525400]="QEMU/KVM (user)"
+    # Single Board Computers
+    OUI_CACHE[B827EB]="Raspberry Pi"; OUI_CACHE[D43A04]="Raspberry Pi"
+    OUI_CACHE[E45F01]="Raspberry Pi"; OUI_CACHE[2CCF67]="Raspberry Pi"
+    OUI_CACHE[DCA632]="Raspberry Pi"; OUI_CACHE[0013C3]="Arduino"
+    OUI_CACHE[98BA61]="BeagleBoard"; OUI_CACHE[A020A6]="Odroid"
+    # Apple
+    OUI_CACHE[000393]="Apple"; OUI_CACHE[000502]="Apple"; OUI_CACHE[000A27]="Apple"
+    OUI_CACHE[000D93]="Apple"; OUI_CACHE[001124]="Apple"; OUI_CACHE[001451]="Apple"
+    OUI_CACHE[0016CB]="Apple"; OUI_CACHE[0017F2]="Apple"; OUI_CACHE[0019E3]="Apple"
+    OUI_CACHE[001B63]="Apple"; OUI_CACHE[001D4F]="Apple"; OUI_CACHE[001E52]="Apple"
+    OUI_CACHE[001F5B]="Apple"; OUI_CACHE[001FF3]="Apple"; OUI_CACHE[0021E9]="Apple"
+    OUI_CACHE[002241]="Apple"; OUI_CACHE[002332]="Apple"; OUI_CACHE[00236C]="Apple"
+    OUI_CACHE[002436]="Apple"; OUI_CACHE[002500]="Apple"; OUI_CACHE[0025BC]="Apple"
+    OUI_CACHE[002608]="Apple"; OUI_CACHE[0026B0]="Apple"; OUI_CACHE[0050E4]="Apple"
+    OUI_CACHE[040CCE]="Apple"; OUI_CACHE[086698]="Apple"; OUI_CACHE[0C3021]="Apple"
+    OUI_CACHE[0C74C2]="Apple"; OUI_CACHE[1093E9]="Apple"; OUI_CACHE[109ADD]="Apple"
+    OUI_CACHE[147DDA]="Apple"; OUI_CACHE[185AF6]="Apple"; OUI_CACHE[1C5B47]="Apple"
+    OUI_CACHE[2CBEEB]="Apple"; OUI_CACHE[34159E]="Apple"; OUI_CACHE[34A395]="Apple"
+    OUI_CACHE[3C0754]="Apple"; OUI_CACHE[3CD0F8]="Apple"; OUI_CACHE[40A5EF]="Apple"
+    OUI_CACHE[442EE6]="Apple"; OUI_CACHE[444E6A]="Apple"; OUI_CACHE[48605F]="Apple"
+    OUI_CACHE[488EEC]="Apple"; OUI_CACHE[4C3275]="Apple"; OUI_CACHE[54E43A]="Apple"
+    OUI_CACHE[5855CA]="Apple"; OUI_CACHE[60334B]="Apple"; OUI_CACHE[608C4A]="Apple"
+    OUI_CACHE[6476F0]="Apple"; OUI_CACHE[64A2F9]="Apple"; OUI_CACHE[685B36]="Apple"
+    OUI_CACHE[68AB7E]="Apple"; OUI_CACHE[6C72E7]="Apple"; OUI_CACHE[703EAC]="Apple"
+    OUI_CACHE[784B7F]="Apple"; OUI_CACHE[784F43]="Apple"; OUI_CACHE[7C04D0]="Apple"
+    OUI_CACHE[7C11BE]="Apple"; OUI_CACHE[80BE05]="Apple"; OUI_CACHE[843838]="Apple"
+    OUI_CACHE[88532C]="Apple"; OUI_CACHE[8C7B9D]="Apple"; OUI_CACHE[8C8590]="Apple"
+    OUI_CACHE[90840D]="Apple"; OUI_CACHE[94DB49]="Apple"; OUI_CACHE[9801A7]="Apple"
+    OUI_CACHE[98FE94]="Apple"; OUI_CACHE[A0999B]="Apple"; OUI_CACHE[A46B6B]="Apple"
+    OUI_CACHE[A483E7]="Apple"; OUI_CACHE[A886DD]="Apple"; OUI_CACHE[AC293A]="Apple"
+    OUI_CACHE[B065BD]="Apple"; OUI_CACHE[B4F0AB]="Apple"; OUI_CACHE[B8E856]="Apple"
+    OUI_CACHE[BC926B]="Apple"; OUI_CACHE[C0FE45]="Apple"; OUI_CACHE[C42B2C]="Apple"
+    OUI_CACHE[C84C75]="Apple"; OUI_CACHE[CC08FB]="Apple"; OUI_CACHE[CC20E8]="Apple"
+    OUI_CACHE[D03A05]="Apple"; OUI_CACHE[D4067B]="Apple"; OUI_CACHE[D461FE]="Apple"
+    OUI_CACHE[D89A34]="Apple"; OUI_CACHE[DC2B66]="Apple"; OUI_CACHE[E01E34]="Apple"
+    OUI_CACHE[E0F847]="Apple"; OUI_CACHE[E4CE8F]="Apple"; OUI_CACHE[E8FDCE]="Apple"
+    OUI_CACHE[F01898]="Apple"; OUI_CACHE[F04F7C]="Apple"; OUI_CACHE[F09A51]="Apple"
+    OUI_CACHE[F40F24]="Apple"; OUI_CACHE[F4F5DB]="Apple"; OUI_CACHE[FCE998]="Apple"
+    OUI_CACHE[F81EDF]="Apple"; OUI_CACHE[FC253F]="Apple"
+    # Google
+    OUI_CACHE[001A11]="Google"; OUI_CACHE[3C5AB4]="Google"; OUI_CACHE[DAA119]="Google"
+    OUI_CACHE[A47733]="Google"; OUI_CACHE[D052A8]="Google"
+    OUI_CACHE[385B0B]="Google"; OUI_CACHE[385B0C]="Google"
+    OUI_CACHE[8C5C3A]="Google (Chromecast)"; OUI_CACHE[8CB84A]="Google"
+    OUI_CACHE[F8DFA8]="Google"; OUI_CACHE[B43A28]="Google"
+    OUI_CACHE[9CADEF]="Google"; OUI_CACHE[00180A]="Google"
+    # Samsung
+    OUI_CACHE[0012FB]="Samsung"; OUI_CACHE[001599]="Samsung"; OUI_CACHE[5001D9]="Samsung"
+    OUI_CACHE[B05CDA]="Samsung"; OUI_CACHE[EC1F72]="Samsung"
+    OUI_CACHE[F0272B]="Samsung"; OUI_CACHE[945E2B]="Samsung"
+    OUI_CACHE[7085C2]="Samsung"; OUI_CACHE[5C514F]="Samsung"
+    OUI_CACHE[C89402]="Samsung"; OUI_CACHE[F82C18]="Samsung"
+    OUI_CACHE[8CFBA5]="Samsung"; OUI_CACHE[A49005]="Samsung"
+    OUI_CACHE[20D906]="Samsung"
+    # Amazon
+    OUI_CACHE[44650D]="Amazon"; OUI_CACHE[74C246]="Amazon"; OUI_CACHE[A002DC]="Amazon"
+    OUI_CACHE[64006A]="Amazon"; OUI_CACHE[4CEFC0]="Amazon"
+    OUI_CACHE[40B076]="Amazon"; OUI_CACHE[AC63BE]="Amazon"
+    # Dell
+    OUI_CACHE[000F53]="Dell"; OUI_CACHE[001422]="Dell"; OUI_CACHE[1866DA]="Dell"
+    OUI_CACHE[00123F]="Dell"; OUI_CACHE[001D09]="Dell"; OUI_CACHE[002170]="Dell"
+    OUI_CACHE[0024E8]="Dell"; OUI_CACHE[5CF9DD]="Dell"; OUI_CACHE[F8DB7F]="Dell"
+    # HP
+    OUI_CACHE[0017A4]="HP"; OUI_CACHE[001F29]="HP"; OUI_CACHE[3CD92B]="HP"
+    OUI_CACHE[001A4B]="HP"; OUI_CACHE[00237D]="HP"; OUI_CACHE[0025B3]="HP"
+    OUI_CACHE[3863BB]="HP"; OUI_CACHE[2C598A]="HP"; OUI_CACHE[9CAED3]="HP"
+    # Lenovo / IBM
+    OUI_CACHE[001485]="Lenovo / IBM"; OUI_CACHE[001E37]="Lenovo / IBM"
+    OUI_CACHE[00216A]="Lenovo / IBM"; OUI_CACHE[002451]="Lenovo / IBM"
+    OUI_CACHE[E096FB]="Lenovo / IBM"
+    # ASUS
+    OUI_CACHE[001E8C]="ASUS"; OUI_CACHE[04D4C4]="ASUS"; OUI_CACHE[10BF48]="ASUS"
+    OUI_CACHE[1C872C]="ASUS"; OUI_CACHE[24F094]="ASUS"; OUI_CACHE[3C0630]="ASUS"
+    OUI_CACHE[60A44C]="ASUS"; OUI_CACHE[74D02B]="ASUS"; OUI_CACHE[8C10D4]="ASUS"
+    OUI_CACHE[94D9B3]="ASUS"; OUI_CACHE[A021B7]="ASUS"; OUI_CACHE[B06EBF]="ASUS"
+    OUI_CACHE[C81EE7]="ASUS"; OUI_CACHE[E89F6D]="ASUS"
+    # Acer
+    OUI_CACHE[001B24]="Acer"; OUI_CACHE[001FC6]="Acer"; OUI_CACHE[1C6F65]="Acer"
+    OUI_CACHE[7824AF]="Acer"; OUI_CACHE[984B4A]="Acer"; OUI_CACHE[D4389C]="Acer"
+    # Cisco
+    OUI_CACHE[00000C]="Cisco"; OUI_CACHE[000143]="Cisco"; OUI_CACHE[000196]="Cisco"
+    OUI_CACHE[00070E]="Cisco"; OUI_CACHE[00097B]="Cisco"; OUI_CACHE[001B0C]="Cisco"
+    OUI_CACHE[001AA1]="Cisco"; OUI_CACHE[001E7A]="Cisco"; OUI_CACHE[001D46]="Cisco"
+    OUI_CACHE[0C2724]="Cisco"; OUI_CACHE[1CDEA7]="Cisco"; OUI_CACHE[24166D]="Cisco"
+    OUI_CACHE[3CCE73]="Cisco"; OUI_CACHE[547FEE]="Cisco"; OUI_CACHE[5C5015]="Cisco"
+    OUI_CACHE[64167F]="Cisco"; OUI_CACHE[6C8814]="Cisco"; OUI_CACHE[848F69]="Cisco"
+    OUI_CACHE[A01D48]="Cisco"; OUI_CACHE[A0528A]="Cisco"; OUI_CACHE[B06CBF]="Cisco"
+    OUI_CACHE[C46ACF]="Cisco"; OUI_CACHE[D8F2CA]="Cisco"; OUI_CACHE[E02DE6]="Cisco"
+    # TP-Link
+    OUI_CACHE[50C7BF]="TP-Link"; OUI_CACHE[E848B8]="TP-Link"; OUI_CACHE[001D0F]="TP-Link"
+    OUI_CACHE[98DAC4]="TP-Link"; OUI_CACHE[54A050]="TP-Link"; OUI_CACHE[6466B3]="TP-Link"
+    OUI_CACHE[704CA5]="TP-Link"; OUI_CACHE[980D2E]="TP-Link"; OUI_CACHE[B0BE76]="TP-Link"
+    OUI_CACHE[F4EC38]="TP-Link"; OUI_CACHE[84D81B]="TP-Link"; OUI_CACHE[1C3BF3]="TP-Link"
+    OUI_CACHE[10FEED]="TP-Link"; OUI_CACHE[000E2E]="TP-Link"
+    # NETGEAR
+    OUI_CACHE[00146C]="NETGEAR"; OUI_CACHE[00184D]="NETGEAR"; OUI_CACHE[288023]="NETGEAR"
+    OUI_CACHE[A42B8C]="NETGEAR"; OUI_CACHE[3822D6]="NETGEAR"; OUI_CACHE[8035C1]="NETGEAR"
+    OUI_CACHE[20F41B]="NETGEAR"; OUI_CACHE[C03F0E]="NETGEAR"; OUI_CACHE[841B5E]="NETGEAR"
+    OUI_CACHE[B03956]="NETGEAR"; OUI_CACHE[A0D3C1]="NETGEAR"
+    # Linksys
+    OUI_CACHE[001217]="Linksys"; OUI_CACHE[0014BF]="Linksys"; OUI_CACHE[001839]="Linksys"
+    OUI_CACHE[001C10]="Linksys"; OUI_CACHE[001A70]="Linksys"; OUI_CACHE[00226B]="Linksys"
+    OUI_CACHE[00259C]="Linksys"; OUI_CACHE[002369]="Linksys"; OUI_CACHE[E091F5]="Linksys"
+    # D-Link
+    OUI_CACHE[00055D]="D-Link"; OUI_CACHE[000D88]="D-Link"; OUI_CACHE[001195]="D-Link"
+    OUI_CACHE[0015E9]="D-Link"; OUI_CACHE[001B11]="D-Link"; OUI_CACHE[001CF0]="D-Link"
+    OUI_CACHE[28107B]="D-Link"; OUI_CACHE[74DADA]="D-Link"; OUI_CACHE[B0C554]="D-Link"
+    OUI_CACHE[CCB255]="D-Link"; OUI_CACHE[1C9180]="D-Link"
+    # Ubiquiti
+    OUI_CACHE[00156D]="Ubiquiti"; OUI_CACHE[002722]="Ubiquiti"; OUI_CACHE[0418D6]="Ubiquiti"
+    OUI_CACHE[24A42C]="Ubiquiti"; OUI_CACHE[44D9E7]="Ubiquiti"; OUI_CACHE[687251]="Ubiquiti"
+    OUI_CACHE[7483C2]="Ubiquiti"; OUI_CACHE[788A20]="Ubiquiti"; OUI_CACHE[D0214F]="Ubiquiti"
+    OUI_CACHE[E063DA]="Ubiquiti"
+    # MikroTik
+    OUI_CACHE[000E8F]="MikroTik"; OUI_CACHE[4C5F70]="MikroTik"; OUI_CACHE[64D154]="MikroTik"
+    OUI_CACHE[A84041]="MikroTik"; OUI_CACHE[D4CA6D]="MikroTik"; OUI_CACHE[E48D8C]="MikroTik"
+    # Huawei
+    OUI_CACHE[001882]="Huawei"; OUI_CACHE[00259E]="Huawei"; OUI_CACHE[3C5C1C]="Huawei"
+    OUI_CACHE[4C7F62]="Huawei"; OUI_CACHE[5407CC]="Huawei"; OUI_CACHE[70B3D5]="Huawei"
+    OUI_CACHE[7439EA]="Huawei"; OUI_CACHE[8C3C4A]="Huawei"; OUI_CACHE[C02506]="Huawei"
+    OUI_CACHE[F80D43]="Huawei"
+    # Xiaomi
+    OUI_CACHE[000F90]="Xiaomi"; OUI_CACHE[182B0A]="Xiaomi"; OUI_CACHE[38BAF8]="Xiaomi"
+    OUI_CACHE[48FD8E]="Xiaomi"; OUI_CACHE[549F13]="Xiaomi"; OUI_CACHE[8C34FD]="Xiaomi"
+    OUI_CACHE[900DCB]="Xiaomi"; OUI_CACHE[C0EEFB]="Xiaomi"; OUI_CACHE[E0ACCB]="Xiaomi"
+    # Synology
+    OUI_CACHE[001132]="Synology"; OUI_CACHE[00127B]="Synology"
+    # QNAP
+    OUI_CACHE[00089B]="QNAP"; OUI_CACHE[001ACE]="QNAP"
+    # Western Digital
+    OUI_CACHE[001DEC]="Western Digital"; OUI_CACHE[0090A9]="Western Digital"
+    OUI_CACHE[1826CB]="Western Digital"
+    # Intel
+    OUI_CACHE[00166F]="Intel"; OUI_CACHE[001E64]="Intel"; OUI_CACHE[A44E31]="Intel"
+    OUI_CACHE[001B21]="Intel"; OUI_CACHE[001CC0]="Intel"; OUI_CACHE[002185]="Intel"
+    OUI_CACHE[F46D04]="Intel"; OUI_CACHE[54EE75]="Intel"
+    # Realtek & Broadcom
+    OUI_CACHE[00E04C]="Realtek"; OUI_CACHE[00E018]="Realtek"
+    OUI_CACHE[001018]="Broadcom"; OUI_CACHE[000AF7]="Broadcom"
+    OUI_CACHE[20687D]="Broadcom"
+    # NVIDIA
+    OUI_CACHE[00044B]="NVIDIA"; OUI_CACHE[1002B5]="NVIDIA"
+    # Sony
+    OUI_CACHE[000B46]="Sony"; OUI_CACHE[001DBA]="Sony"; OUI_CACHE[00215D]="Sony"
+    OUI_CACHE[0812CF]="Sony"; OUI_CACHE[D847BB]="Sony"; OUI_CACHE[706655]="Sony"
+    # LG
+    OUI_CACHE[001E66]="LG"; OUI_CACHE[002244]="LG"; OUI_CACHE[A8B8E0]="LG"
+    OUI_CACHE[DC330D]="LG"; OUI_CACHE[E0CB4E]="LG"
+    # Nintendo
+    OUI_CACHE[0019FD]="Nintendo"; OUI_CACHE[0022AA]="Nintendo"; OUI_CACHE[A4C0E1]="Nintendo"
+    OUI_CACHE[B47C9C]="Nintendo"; OUI_CACHE[B8276D]="Nintendo"
+    # Microsoft Xbox
+    OUI_CACHE[002248]="Microsoft Xbox"; OUI_CACHE[5847CA]="Microsoft Xbox"
+    OUI_CACHE[7C1E52]="Microsoft Xbox"; OUI_CACHE[A45E60]="Microsoft Xbox"
+    # Sony PlayStation
+    OUI_CACHE[000420]="Sony Interactive / Logitech"; OUI_CACHE[001FE1]="Sony PlayStation"
+    OUI_CACHE[A89352]="Sony PlayStation"; OUI_CACHE[00265C]="Sony Interactive"
+    # Roku
+    OUI_CACHE[000D4B]="Roku"; OUI_CACHE[0CA613]="Roku"; OUI_CACHE[28E7CF]="Roku"
+    # Brother Printers
+    OUI_CACHE[000DD9]="Brother"; OUI_CACHE[001B8C]="Brother"; OUI_CACHE[002305]="Brother"
+    OUI_CACHE[002577]="Brother"; OUI_CACHE[04A316]="Brother"; OUI_CACHE[102332]="Brother"
+    # Canon Printers
+    OUI_CACHE[000A99]="Canon"; OUI_CACHE[001B7A]="Canon"
+    # Epson
+    OUI_CACHE[000048]="Epson"; OUI_CACHE[000C6E]="Epson"; OUI_CACHE[001BE2]="Epson"
+    # Philips Hue
+    OUI_CACHE[001788]="Philips Hue"; OUI_CACHE[ECB5FA]="Philips Hue"
+    # Sonos
+    OUI_CACHE[000E58]="Sonos"; OUI_CACHE[B8E937]="Sonos"; OUI_CACHE[94599C]="Sonos"
+    # Ring / Amazon
+    OUI_CACHE[000EC2]="Ring / Amazon"; OUI_CACHE[747548]="Ring / Amazon"
+    # NetApp
+    OUI_CACHE[000A98]="NetApp"
+    # Juniper
+    OUI_CACHE[001ABD]="Juniper"; OUI_CACHE[00121E]="Juniper"
+    # Aruba / HPE
+    OUI_CACHE[001A1E]="Aruba / HPE"; OUI_CACHE[B0B98A]="Aruba / HPE"
+    OUI_CACHE[D0C7C0]="Aruba / HPE"
+    # Fortinet
+    OUI_CACHE[00090F]="Fortinet"; OUI_CACHE[906CAC]="Fortinet"
+    OUI_CACHE[BC1665]="Fortinet"
+    # Zyxel
+    OUI_CACHE[001349]="Zyxel"; OUI_CACHE[001ACF]="Zyxel"; OUI_CACHE[1C1D86]="Zyxel"
+    # OnePlus
+    OUI_CACHE[0A0B0C]="OnePlus"; OUI_CACHE[DAAEC7]="OnePlus"
+    # Motorola
+    OUI_CACHE[001E0B]="Motorola"; OUI_CACHE[1C2B10]="Motorola"
+    OUI_CACHE[2C5B1A]="Motorola"; OUI_CACHE[00150C]="Motorola"
+    # Nokia
+    OUI_CACHE[00137A]="Nokia"; OUI_CACHE[0022A2]="Nokia"
+    OUI_CACHE[4C6B39]="Nokia"; OUI_CACHE[B0A737]="Nokia"
+    # HTC
+    OUI_CACHE[0012D2]="HTC"; OUI_CACHE[000BFC]="HTC"
+    OUI_CACHE[28D0EA]="HTC"; OUI_CACHE[102DB6]="HTC"
+    # BlackBerry
+    OUI_CACHE[000A28]="BlackBerry"; OUI_CACHE[001FDD]="BlackBerry"
+    # Oppo / Vivo / Realme
+    OUI_CACHE[7C610E]="Oppo"; OUI_CACHE[8C5085]="Oppo"
+    OUI_CACHE[9CFCE8]="Oppo"; OUI_CACHE[447733]="Vivo"
+    # Wyze
+    OUI_CACHE[24CF21]="Wyze Labs"; OUI_CACHE[2CAA8E]="Wyze Labs"
+    # Belkin / WeMo
+    OUI_CACHE[001D7D]="Belkin / WeMo"; OUI_CACHE[EC1A59]="Belkin / WeMo"
+    # Ecobee
+    OUI_CACHE[502FA5]="Ecobee"
+    # Arlo
+    OUI_CACHE[14EBB6]="Arlo / Netgear"
+    # Honeywell
+    OUI_CACHE[001AAF]="Honeywell"
+    # Vizio
+    OUI_CACHE[001EC9]="Vizio"; OUI_CACHE[B0091A]="Vizio"
+    # TCL
+    OUI_CACHE[6CADEF]="TCL"; OUI_CACHE[9CEFD5]="TCL"
+    # Hisense
+    OUI_CACHE[00234E]="Hisense"; OUI_CACHE[641A22]="Hisense"
+    # Lutron
+    OUI_CACHE[00182E]="Lutron"
+    # August Home
+    OUI_CACHE[34EA34]="August Home"
+    # Tuya / Smart Life (IoT)
+    OUI_CACHE[10D61B]="Tuya Smart"
+    OUI_CACHE[4C11BF]="Tuya Smart"
+    OUI_CACHE[84E342]="Tuya Smart"
+    # eero
+    OUI_CACHE[8C6B8F]="eero"
+    # Orbi (Netgear)
+    OUI_CACHE[1C61B4]="Orbi / Netgear"
+    # Plume
+    OUI_CACHE[BC2C2D]="Plume"
+}
+
+# --- OUI vendor lookup with cache + API fallback ---
 get_vendor() {
-    local mac="$1"
+    local mac="$1" oui_clean vendor
     [ -z "$mac" ] || [ "$mac" = "Unavailable" ] && { echo "Unknown Vendor"; return; }
 
-    local oui_clean
     oui_clean=$(echo "$mac" | tr -d ':-' | tr 'a-z' 'A-Z' | cut -c 1-6)
 
+    # Check for randomized/private MAC (mobile privacy feature)
+    local first_byte="${oui_clean:0:2}"
+    local second_char="${first_byte:1:1}"
+    case "$second_char" in
+        2|6|A|E) echo "Randomized MAC (Privacy)"; return ;;
+    esac
+
+    # Check cache
+    [ -n "${OUI_CACHE[$oui_clean]}" ] && { echo "${OUI_CACHE[$oui_clean]}"; return; }
+
+    # Check local OUI file
     if [ -f /usr/share/ieee-data/oui.txt ]; then
-        local match
-        match=$(grep -i "^$oui_clean" /usr/share/ieee-data/oui.txt 2>/dev/null | head -1 | cut -d')' -f2 | xargs)
-        if [ -n "$match" ]; then echo "$match"; return; fi
+        vendor=$(grep -i "^$oui_clean" /usr/share/ieee-data/oui.txt 2>/dev/null | head -1 | cut -d')' -f2 | xargs)
+        if [ -n "$vendor" ]; then
+            OUI_CACHE[$oui_clean]="$vendor"
+            echo "$vendor"
+            return
+        fi
     fi
 
-    case "$oui_clean" in
-        005056|000C29|000569|00155D) echo "VMware / Hyper-V" ;;
-        080027|0A0027)             echo "Oracle VirtualBox" ;;
-        B827EB|D43A04|E45F01|2CCF67) echo "Raspberry Pi" ;;
-        001A11|3C5AB4|F4F5DB|DAA119) echo "Google" ;;
-        000393|000502|A483E7|1093E9) echo "Apple" ;;
-        50C7BF|E848B8|001D0F|98DAC4) echo "TP-Link" ;;
-        00146C|00184D|288023|A42B8C) echo "NETGEAR" ;;
-        00166F|001E64|A44E31|8086F2) echo "Intel" ;;
-        *)                          echo "Unknown Vendor ($oui_clean)" ;;
-    esac
+    # API fallback
+    if command -v curl >/dev/null 2>&1; then
+        vendor=$(curl -s --max-time 3 "https://api.maclookup.app/v2/macs/$oui_clean" 2>/dev/null)
+        if [ -n "$vendor" ]; then
+            vendor=$(echo "$vendor" | grep -o '"company":"[^"]*"' | cut -d'"' -f4)
+            if [ -n "$vendor" ]; then
+                OUI_CACHE[$oui_clean]="$vendor"
+                echo "$vendor"
+                return
+            fi
+        fi
+    fi
+
+    echo "Unknown Vendor"
 }
 
 # --- Service label for port ---
@@ -146,11 +404,11 @@ port_service() {
 
 # --- Multi-signal OS fingerprinting ---
 fingerprint_os() {
-    local ip="$1" ttl="$2"
-    shift 2
+    local ip="$1" ttl="$2" hname="$3"
+    shift 3
     local open_ports=("$@")
-    local sw=0 sl=0 sn=0 total=0 top=0 pct=0
-    local os="Unknown" conf="low" header="" nb=""
+    local sw=0 sl=0 sa=0 sn=0 total=0 top=0 pct=0
+    local os="Unknown" conf="low" header="" nb="" mac="" oui=""
 
     # TTL
     if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then sw=$((sw + 2))
@@ -158,9 +416,29 @@ fingerprint_os() {
     elif [ "$ttl" -ge 240 ] && [ "$ttl" -le 255 ]; then sn=$((sn + 2))
     fi
 
+    # Hostname clues
+    if [ -n "$hname" ] && [ "$hname" != "No DNS/mDNS/NBT Record" ] && [ "$hname" != "Unavailable" ]; then
+        local hname_upper
+        hname_upper=$(echo "$hname" | tr 'a-z' 'A-Z')
+        case "$hname_upper" in
+            IPHONE*|IPAD*|IPOD*) sa=$((sa + 3)) ;;
+            MACBOOK*|MAC-PRO*|IMAC*|MACMINI*) sa=$((sa + 3)) ;;
+            DESKTOP-*|LAPTOP-*|WIN-*) sw=$((sw + 1)) ;;
+            ANDROID*|SM-*|GT-*|REDMI*|POCO*|MOTO*) sl=$((sl + 2)) ;;
+        esac
+    fi
+
     # Ports
     for p in "${open_ports[@]}"; do
-        case $p in 445) sw=$((sw + 3)) ;; 139|3389) sw=$((sw + 2)) ;; 22) sl=$((sl + 2)) ;; 23) sn=$((sn + 2)) ;; esac
+        case $p in
+            445) sw=$((sw + 3)) ;;
+            139|3389) sw=$((sw + 2)) ;;
+            22) sl=$((sl + 2)) ;;
+            23) sn=$((sn + 1)) ;;
+            5000|7000) sa=$((sa + 3)) ;;
+            62078) sa=$((sa + 2)) ;;
+            5555) sl=$((sl + 2)) ;;
+        esac
     done
 
     # HTTP Server header
@@ -170,18 +448,42 @@ fingerprint_os() {
         echo "$header" | grep -qiE "Apache|nginx" && sl=$((sl + 1))
     fi
 
-    # NetBIOS name
+    # NetBIOS
     if command -v nmblookup >/dev/null 2>&1; then
         nb=$(nmblookup -A "$ip" 2>/dev/null | grep -E "<00>" | grep -v "<GROUP>" | head -1 | awk '{print $1}')
         [ -n "$nb" ] && sw=$((sw + 3))
     fi
 
-    total=$((sw + sl + sn))
+    # MAC OUI hint (weak, +1 only)
+    mac=$(get_mac_address "$ip" 2>/dev/null)
+    if [ -n "$mac" ] && [ "$mac" != "Unavailable" ]; then
+        oui=$(echo "$mac" | tr -d ':-' | tr 'a-z' 'A-Z' | cut -c 1-6)
+        case "$oui" in
+            000393|000502|000A27|1093E9|A483E7|F4F5DB|\
+            147DDA|185AF6|34A395|3CD0F8|685B36|703EAC|\
+            784F43|88532C|90840D|94DB49|9801A7|B8E856|\
+            C84C75|D89A34|F01898|F09A51|F40F24|FCE998|\
+            FC253F|04D3B0|086698) sa=$((sa + 1)) ;;
+            0012FB|001599|5001D9|B05CDA|EC1F72|7085C2|\
+            001A11|3C5AB4|DAA119|A47733|000F90|182B0A|\
+            48FD8E|549F13|001882|3C5C1C|5407CC|DAAEC7|\
+            001E66|A8B8E0|DC330D|000FB0|447733|7C610E|\
+            9CFCE8|8C5085|0012D2|00150C) sl=$((sl + 1)) ;;
+        esac
+    fi
+
+    # Determine winner
+    total=$((sw + sl + sa + sn))
     [ "$total" -eq 0 ] && { echo "Unknown|low"; return; }
 
-    if [ "$sw" -ge "$sl" ] && [ "$sw" -ge "$sn" ] && [ "$sw" -gt 0 ]; then os="Windows"; top=$sw
-    elif [ "$sl" -ge "$sw" ] && [ "$sl" -ge "$sn" ] && [ "$sl" -gt 0 ]; then os="Linux / macOS / Mobile"; top=$sl
-    elif [ "$sn" -gt 0 ]; then os="Cisco / Network Device"; top=$sn
+    if [ "$sa" -ge "$sw" ] && [ "$sa" -ge "$sl" ] && [ "$sa" -ge "$sn" ] && [ "$sa" -gt 0 ]; then
+        os="Apple (macOS/iOS)"; top=$sa
+    elif [ "$sw" -ge "$sl" ] && [ "$sw" -ge "$sn" ] && [ "$sw" -gt 0 ]; then
+        os="Windows"; top=$sw
+    elif [ "$sl" -ge "$sn" ] && [ "$sl" -gt 0 ]; then
+        os="Linux / Android"; top=$sl
+    elif [ "$sn" -gt 0 ]; then
+        os="Network / IoT Device"; top=$sn
     fi
 
     pct=$((top * 100 / total))
@@ -257,7 +559,7 @@ start_neo_scanner() {
     clear
     echo ""
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.12 █▓▒░          ${CLR_RESET}"
+    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.13 █▓▒░          ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
     echo -e "${CLR_MAGENTA}            Created By ItsNEOx              ${CLR_RESET}"
     echo -e "${CLR_DARKCYAN}      The super simple network scanner      ${CLR_RESET}"
@@ -347,7 +649,7 @@ start_neo_scanner() {
     # Mode 7 — Check for Updates
     # ---------------------------------------------------------
     if [ "$mode" = "7" ]; then
-        local_version="1.12"
+        local_version="1.13"
         local_repo_raw="https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/neoradar"
         local_repo_web="https://github.com/ItsNEOx/Neo-Radar"
 
@@ -492,13 +794,16 @@ start_neo_scanner() {
     # Mode 2 — Single Host Inspection
     # ---------------------------------------------------------
     if [ "$mode" = "2" ]; then
-        echo -e "${CLR_DARKGRAY}Enter 'B' for Main Menu, or 'E' to Exit.${CLR_RESET}"
         while true; do
             read -r -p "Enter target IP address (Example : 192.168.0.1): " target_ip
             case "$target_ip" in
                 [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-                [bB]|"") start_neo_scanner; return ;;
+                [bB]) start_neo_scanner; return ;;
             esac
+            if [ -z "$target_ip" ]; then
+                echo -e "  ${CLR_YELLOW}[!] IP address is required.${CLR_RESET}"
+                continue
+            fi
             if validate_ip "$target_ip"; then break; fi
             echo -e "  ${CLR_YELLOW}[!] Invalid IP format. Use the form 192.168.0.1${CLR_RESET}"
         done
@@ -534,18 +839,32 @@ start_neo_scanner() {
         fi
         rm -rf "$tmp_dir"
 
-        # OS fingerprinting with multi-signal
-        os_result=$(fingerprint_os "$target_ip" "$ttl" "${open_ports[@]}")
-        os="${os_result%|*}"
-        confidence="${os_result#*|}"
-
         host_name=$(resolve_hostname "$target_ip")
+
+        # OS Detection (TTL-based with Apple hostname hint)
+        if [ "$ttl" != "N/A" ]; then
+            if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then os="Windows"
+            elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then os="Linux / Unix / Android / macOS"
+            elif [ "$ttl" -ge 240 ]; then os="Network / IoT Device"
+            else os="Unknown"; fi
+        else
+            os="Unknown"
+        fi
+
+        # Apple override via hostname
+        if [ -n "$host_name" ] && [ "$host_name" != "Unavailable" ]; then
+            hname_upper=$(echo "$host_name" | tr 'a-z' 'A-Z')
+            case "$hname_upper" in
+                IPHONE*|IPAD*|IPOD*) os="Apple iOS" ;;
+                MACBOOK*|MAC-PRO*|IMAC*|MACMINI*) os="Apple macOS" ;;
+            esac
+        fi
 
         echo -e "\n${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
         echo -e "${CLR_CYAN} Host Details: $target_ip${CLR_RESET}"
         echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
         echo -e "  ${CLR_GREEN}Hostname : $host_name${CLR_RESET}"
-        echo -e "  ${CLR_GREEN}OS Family: $os (TTL: $ttl, confidence: $confidence)${CLR_RESET}"
+        echo -e "  ${CLR_GREEN}OS Family: $os (TTL: $ttl)${CLR_RESET}"
 
         if [ "${#open_ports[@]}" -gt 0 ]; then
             ports_text=$(IFS=', '; echo "${open_ports[*]}")
@@ -561,7 +880,7 @@ start_neo_scanner() {
             " Timestamp : $(date)"
             " Target IP : $target_ip"
             " Hostname  : $host_name"
-            " OS Family : $os (TTL: $ttl, confidence: $confidence)"
+            " OS Family : $os (TTL: $ttl)"
             " Open Ports: $ports_text"
             "============================================"
         )
@@ -745,6 +1064,8 @@ start_neo_scanner() {
         ping -c 1 -W 1 -b "$prefix.255" >/dev/null 2>&1
         sleep 0.3
 
+        load_oui_cache
+
         echo -e "\n${CLR_CYAN}Device MAC Addresses & Manufacturer Identification:${CLR_RESET}"
 
         scan_log=(
@@ -797,7 +1118,7 @@ start_neo_scanner() {
                     fi
                 done
 
-                os_result=$(fingerprint_os "$target" "$ttl" "${open_ports[@]}")
+                os_result=$(fingerprint_os "$target" "$ttl" "$host_name" "${open_ports[@]}")
                 os="${os_result%|*}"
                 confidence="${os_result#*|}"
 
