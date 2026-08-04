@@ -1,9 +1,9 @@
-# ░▒▓█ NEO RADAR v1.12 █▓▒░
+# ░▒▓█ NEO RADAR v1.14 █▓▒░
 
 The super simple, lightweight network scanner for Linux (Works in Termux too!).
 
 
-<img src="https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/neoradar.png" alt="image">
+<img src="https://raw.githubusercontent.com/ItsNEOx/neoimagerepo/refs/heads/main/NEOIMAGE.png" alt="image">
 
 NEO-Radar Install
 Install this program by running the following code into your terminal :
