@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ░▒▓█ NEO RADAR v1.13 █▓▒░
+# ░▒▓█ NEO RADAR v1.14 █▓▒░
 
 # ANSI Color Codes
 CLR_RESET="\033[0m"
@@ -14,7 +14,7 @@ CLR_DARKGRAY="\033[1;30m"
 CLR_RED="\033[1;31m"
 
 DEFAULT_PREFIX="192.168.0"
-COMMON_PORTS=(21 22 23 25 53 80 110 135 139 143 443 445 993 995 1433 3306 3389 5900 8080 8443)
+COMMON_PORTS=(21 22 23 25 53 80 110 135 139 143 443 445 548 993 995 1433 3306 3389 5900 8080 8443)
 KEY_PORTS=(22 23 80 139 443 445 3389 5000 5555 62078)
 declare -A OUI_CACHE
 
@@ -397,8 +397,12 @@ get_vendor() {
 port_service() {
     case $1 in
         22) echo "SSH" ;; 23) echo "Telnet" ;; 80) echo "HTTP" ;;
-        139) echo "NetBIOS" ;; 443) echo "HTTPS" ;; 445) echo "SMB" ;;
-        3389) echo "RDP" ;; *) echo "$1" ;;
+        135) echo "RPC" ;; 139) echo "NetBIOS" ;; 443) echo "HTTPS" ;;
+        445) echo "SMB" ;; 548) echo "AFP" ;; 1433) echo "MS-SQL" ;;
+        3389) echo "RDP" ;; 3689) echo "DAAP" ;;
+        5000) echo "AirPlay" ;; 5555) echo "ADB" ;; 5900) echo "VNC" ;;
+        62078) echo "iTunes" ;; 8080) echo "Alt-HTTP" ;;
+        *) echo "$1" ;;
     esac
 }
 
@@ -409,49 +413,60 @@ fingerprint_os() {
     local open_ports=("$@")
     local sw=0 sl=0 sa=0 sn=0 total=0 top=0 pct=0
     local os="Unknown" conf="low" header="" nb="" mac="" oui=""
+    local signals=""
 
     # TTL
-    if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then sw=$((sw + 2))
-    elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then sl=$((sl + 2))
-    elif [ "$ttl" -ge 240 ] && [ "$ttl" -le 255 ]; then sn=$((sn + 2))
-    fi
+    if [ "$ttl" -ge 100 ] && [ "$ttl" -le 128 ]; then sw=$((sw + 3)); signals="TTL:$ttl(Win+3)"
+    elif [ "$ttl" -ge 32 ] && [ "$ttl" -le 64 ]; then sl=$((sl + 3)); signals="TTL:$ttl(Lin+3)"
+    elif [ "$ttl" -ge 240 ] && [ "$ttl" -le 255 ]; then sn=$((sn + 3)); signals="TTL:$ttl(Net+3)"
+    else signals="TTL:$ttl"; fi
 
     # Hostname clues
     if [ -n "$hname" ] && [ "$hname" != "No DNS/mDNS/NBT Record" ] && [ "$hname" != "Unavailable" ]; then
         local hname_upper
         hname_upper=$(echo "$hname" | tr 'a-z' 'A-Z')
         case "$hname_upper" in
-            IPHONE*|IPAD*|IPOD*) sa=$((sa + 3)) ;;
-            MACBOOK*|MAC-PRO*|IMAC*|MACMINI*) sa=$((sa + 3)) ;;
-            DESKTOP-*|LAPTOP-*|WIN-*) sw=$((sw + 1)) ;;
-            ANDROID*|SM-*|GT-*|REDMI*|POCO*|MOTO*) sl=$((sl + 2)) ;;
+            IPHONE*|IPAD*|IPOD*) sa=$((sa + 5)); signals="$signals, Host:Apple(+5)" ;;
+            MACBOOK*|MAC-PRO*|IMAC*|MACMINI*|APPLE*) sa=$((sa + 5)); signals="$signals, Host:Apple(+5)" ;;
+            DESKTOP-*|LAPTOP-*|WIN-*|WORKSTATION*) sw=$((sw + 4)); signals="$signals, Host:Win(+4)" ;;
+            ANDROID*|SM-*|GT-*|REDMI*|POCO*|MOTO*|ONEPLUS*) sl=$((sl + 4)); signals="$signals, Host:Android(+4)" ;;
+            ROUTER*|GATEWAY*|SWITCH*|AP-*|OPENWRT*|DD-WRT*) sn=$((sn + 5)); signals="$signals, Host:Network(+5)" ;;
         esac
     fi
 
     # Ports
     for p in "${open_ports[@]}"; do
         case $p in
-            445) sw=$((sw + 3)) ;;
-            139|3389) sw=$((sw + 2)) ;;
-            22) sl=$((sl + 2)) ;;
-            23) sn=$((sn + 1)) ;;
-            5000|7000) sa=$((sa + 3)) ;;
-            62078) sa=$((sa + 2)) ;;
-            5555) sl=$((sl + 2)) ;;
+            445) sw=$((sw + 5)); signals="$signals, SMB(+5)" ;;
+            135) sw=$((sw + 3)); signals="$signals, RPC(+3)" ;;
+            139) sw=$((sw + 3)); signals="$signals, NetBIOS(+3)" ;;
+            3389) sw=$((sw + 4)); signals="$signals, RDP(+4)" ;;
+            1433) sw=$((sw + 3)); signals="$signals, MSSQL(+3)" ;;
+            22) sl=$((sl + 3)); signals="$signals, SSH(+3)" ;;
+            5555) sl=$((sl + 4)); signals="$signals, ADB(+4)" ;;
+            5900) sl=$((sl + 2)); signals="$signals, VNC(+2)" ;;
+            23) sn=$((sn + 3)); signals="$signals, Telnet(+3)" ;;
+            8080) sn=$((sn + 1)); signals="$signals, Alt-HTTP(+1)" ;;
+            5000|7000) sa=$((sa + 4)); signals="$signals, AirPlay(+4)" ;;
+            62078) sa=$((sa + 5)); signals="$signals, iTunes(+5)" ;;
+            548) sa=$((sa + 4)); signals="$signals, AFP(+4)" ;;
+            3689) sa=$((sa + 3)); signals="$signals, DAAP(+3)" ;;
         esac
     done
 
     # HTTP Server header
     header=$(echo -e "HEAD / HTTP/1.0\r\n\r\n" | timeout 1 nc "$ip" 80 2>/dev/null | grep -i "^Server:" | head -1)
     if [ -n "$header" ]; then
-        echo "$header" | grep -qi "Microsoft-IIS" && sw=$((sw + 2))
-        echo "$header" | grep -qiE "Apache|nginx" && sl=$((sl + 1))
+        echo "$header" | grep -qi "Microsoft-IIS" && { sw=$((sw + 4)); signals="$signals, IIS(+4)"; }
+        echo "$header" | grep -qiE "Apache|nginx|lighttpd" && { sl=$((sl + 2)); signals="$signals, Web:Lin(+2)"; }
+        echo "$header" | grep -qiE "micro_httpd|GoAhead|RomPager|Boa|httpd" && { sn=$((sn + 4)); signals="$signals, IoT-srv(+4)"; }
+        echo "$header" | grep -qiE "AirHttpd|CUPS" && { sa=$((sa + 4)); signals="$signals, Apple-srv(+4)"; }
     fi
 
     # NetBIOS
     if command -v nmblookup >/dev/null 2>&1; then
         nb=$(nmblookup -A "$ip" 2>/dev/null | grep -E "<00>" | grep -v "<GROUP>" | head -1 | awk '{print $1}')
-        [ -n "$nb" ] && sw=$((sw + 3))
+        [ -n "$nb" ] && { sw=$((sw + 4)); signals="$signals, NetBIOS(+4)"; }
     fi
 
     # MAC OUI hint (weak, +1 only)
@@ -463,18 +478,18 @@ fingerprint_os() {
             147DDA|185AF6|34A395|3CD0F8|685B36|703EAC|\
             784F43|88532C|90840D|94DB49|9801A7|B8E856|\
             C84C75|D89A34|F01898|F09A51|F40F24|FCE998|\
-            FC253F|04D3B0|086698) sa=$((sa + 1)) ;;
+            FC253F|04D3B0|086698) sa=$((sa + 1)); signals="$signals, OUI:Apple(+1)" ;;
             0012FB|001599|5001D9|B05CDA|EC1F72|7085C2|\
             001A11|3C5AB4|DAA119|A47733|000F90|182B0A|\
             48FD8E|549F13|001882|3C5C1C|5407CC|DAAEC7|\
             001E66|A8B8E0|DC330D|000FB0|447733|7C610E|\
-            9CFCE8|8C5085|0012D2|00150C) sl=$((sl + 1)) ;;
+            9CFCE8|8C5085|0012D2|00150C) sl=$((sl + 1)); signals="$signals, OUI:Android(+1)" ;;
         esac
     fi
 
     # Determine winner
     total=$((sw + sl + sa + sn))
-    [ "$total" -eq 0 ] && { echo "Unknown|low"; return; }
+    [ "$total" -eq 0 ] && { echo "Unknown|low|"; return; }
 
     if [ "$sa" -ge "$sw" ] && [ "$sa" -ge "$sl" ] && [ "$sa" -ge "$sn" ] && [ "$sa" -gt 0 ]; then
         os="Apple (macOS/iOS)"; top=$sa
@@ -491,7 +506,7 @@ fingerprint_os() {
     [ "$pct" -ge 60 ] && conf="high"
     [ "$pct" -ge 40 ] && conf="medium"
 
-    echo "$os|$conf"
+    echo "$os|$conf|$signals"
 }
 
 # --- Loop-based end options (no recursion) ---
@@ -516,7 +531,7 @@ show_end_options() {
                 ;;
             [sS])
                 if [ "$suppress_save" = "true" ]; then
-                    start_neo_scanner
+                    start_neo_radar
                     return
                 fi
                 if [ "${#output_data[@]}" -eq 0 ]; then
@@ -545,7 +560,7 @@ show_end_options() {
                 fi
                 ;;
             [bB]|"")
-                start_neo_scanner
+                start_neo_radar
                 return
                 ;;
         esac
@@ -553,16 +568,16 @@ show_end_options() {
 }
 
 # ====================================================================
-# Main Scanner
+# Main Radar
 # ====================================================================
-start_neo_scanner() {
+start_neo_radar() {
     clear
     echo ""
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
-    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.13 █▓▒░          ${CLR_RESET}"
+    echo -e "${CLR_CYAN}         ░▒▓█ NEO RADAR v1.14 █▓▒░          ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}============================================${CLR_RESET}"
     echo -e "${CLR_MAGENTA}            Created By ItsNEOx              ${CLR_RESET}"
-    echo -e "${CLR_DARKCYAN}      The super simple network scanner      ${CLR_RESET}"
+    echo -e "${CLR_DARKCYAN}      The super simple network radar      ${CLR_RESET}"
     echo -e "${CLR_DARKGRAY}            for legal purposes              ${CLR_RESET}"
     echo -e "${CLR_DARKMAGENTA}--------------------------------------------${CLR_RESET}"
     echo ""
@@ -617,7 +632,8 @@ start_neo_scanner() {
 
         echo -e "${CLR_YELLOW}2) Single Host Inspection${CLR_RESET}"
         echo -e "${CLR_GRAY}   Ping, TTL OS estimation, DNS/mDNS/NBT hostnames,${CLR_RESET}"
-        echo -e "${CLR_GRAY}   and batched port scan on one IP.${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   and batched port scan on one IP. OS confidence based${CLR_RESET}"
+        echo -e "${CLR_GRAY}   on TTL range accuracy (very high when TTL is known).${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}3) Ping + TCP Port Scan${CLR_RESET}"
         echo -e "${CLR_GRAY}   Discover active hosts, then scan all common TCP ports${CLR_RESET}"
@@ -627,8 +643,9 @@ start_neo_scanner() {
         echo -e "${CLR_GRAY}   Queries kernel ARP tables for MAC addresses and vendors.${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}5) Hostname Scan & Fingerprinting${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Resolves hostnames (DNS, mDNS, NetBIOS) with enhanced${CLR_RESET}"
-        echo -e "${CLR_GRAY}   multi-signal OS detection (TTL + ports + HTTP + NetBIOS).${CLR_RESET}\n"
+        echo -e "${CLR_GRAY}   Multi-signal OS detection: TTL, ports, hostname, HTTP${CLR_RESET}"
+        echo -e "${CLR_GRAY}   header, NetBIOS, and MAC OUI. Confidence: ≥80% very high,${CLR_RESET}"
+        echo -e "${CLR_GRAY}   ≥60% high, ≥40% medium, <40% low.${CLR_RESET}\n"
 
         echo -e "${CLR_YELLOW}7) Check for Updates${CLR_RESET}"
         echo -e "${CLR_GRAY}   Checks GitHub for new releases.${CLR_RESET}\n"
@@ -649,7 +666,7 @@ start_neo_scanner() {
     # Mode 7 — Check for Updates
     # ---------------------------------------------------------
     if [ "$mode" = "7" ]; then
-        local_version="1.13"
+        local_version="1.14"
         local_repo_raw="https://raw.githubusercontent.com/ItsNEOx/Neo-Radar/main/neoradar"
         local_repo_web="https://github.com/ItsNEOx/Neo-Radar"
 
@@ -737,6 +754,8 @@ start_neo_scanner() {
 
         echo -e "${CLR_YELLOW}2) Single Host Inspection${CLR_RESET}"
         echo -e "${CLR_GRAY}   Neo-Radar: Ping + TTL OS guess + DNS + port scan.${CLR_RESET}"
+        echo -e "${CLR_GRAY}   OS confidence: very high when TTL matches known range${CLR_RESET}"
+        echo -e "${CLR_GRAY}   (Windows 100-128, Linux/Unix 32-64, Network 240-255).${CLR_RESET}"
         echo -e "   ${CLR_GREEN}Nmap:      nmap -A 192.168.0.1${CLR_RESET}"
         echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
         echo -e "     ${CLR_DARKGRAY}-A  -> Aggressive (-O -sV -sC --traceroute)${CLR_RESET}"
@@ -764,7 +783,10 @@ start_neo_scanner() {
         echo ""
 
         echo -e "${CLR_YELLOW}5) Hostname Scan & Fingerprinting${CLR_RESET}"
-        echo -e "${CLR_GRAY}   Neo-Radar: Hostname resolution + multi-signal OS.${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Neo-Radar: Multi-signal OS detection with confidence rating.${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Signals: TTL, open ports, hostname, HTTP header, NetBIOS,${CLR_RESET}"
+        echo -e "${CLR_GRAY}   MAC OUI. Points awarded to Windows/Linux/Apple/Network.${CLR_RESET}"
+        echo -e "${CLR_GRAY}   Confidence: ≥80% very high, ≥60% high, ≥40% medium, <40% low.${CLR_RESET}"
         echo -e "   ${CLR_GREEN}Nmap:      nmap -sL 192.168.0.0/24  (DNS lookup)${CLR_RESET}"
         echo -e "     ${CLR_GREEN}nmap -O 192.168.0.0/24       (OS detection)${CLR_RESET}"
         echo -e "   ${CLR_DARKCYAN}Flags:${CLR_RESET}"
@@ -802,7 +824,7 @@ start_neo_scanner() {
             read -r -p "Enter target IP address (Example : 192.168.0.1): " target_ip
             case "$target_ip" in
                 [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-                [bB]) start_neo_scanner; return ;;
+                [bB]) start_neo_radar; return ;;
             esac
             if [ -z "$target_ip" ]; then
                 echo -e "  ${CLR_YELLOW}[!] IP address is required.${CLR_RESET}"
@@ -900,7 +922,7 @@ start_neo_scanner() {
     read -r -p "Enter target network prefix (default: $DEFAULT_PREFIX): " prefix_input
     case "$prefix_input" in
         [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-        [bB]) start_neo_scanner; return ;;
+        [bB]) start_neo_radar; return ;;
     esac
     prefix="${prefix_input:-$DEFAULT_PREFIX}"
 
@@ -908,7 +930,7 @@ start_neo_scanner() {
         read -r -p "Enter starting host number (1-255, default: 1): " start_input
         case "$start_input" in
             [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-            [bB]) start_neo_scanner; return ;;
+            [bB]) start_neo_radar; return ;;
             "") start_host=1; break ;;
             *[!0-9]*) echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}" ;;
             *)
@@ -925,7 +947,7 @@ start_neo_scanner() {
         read -r -p "Enter ending host number (1-255, default: 254): " end_input
         case "$end_input" in
             [eE]) echo -e "\n${CLR_CYAN}Goodbye.${CLR_RESET}"; exit 0 ;;
-            [bB]) start_neo_scanner; return ;;
+            [bB]) start_neo_radar; return ;;
             "") end_host=254; break ;;
             *[!0-9]*) echo -e "  ${CLR_YELLOW}[!] Numbers only, between 1 and 255.${CLR_RESET}" ;;
             *)
@@ -940,7 +962,7 @@ start_neo_scanner() {
 
     if [ "$start_host" -gt "$end_host" ]; then
         echo -e "  ${CLR_YELLOW}[!] Starting host cannot be greater than ending host.${CLR_RESET}"
-        start_neo_scanner
+        start_neo_radar
         return
     fi
 
@@ -1123,8 +1145,7 @@ start_neo_scanner() {
                 done
 
                 os_result=$(fingerprint_os "$target" "$ttl" "$host_name" "${open_ports[@]}")
-                os="${os_result%|*}"
-                confidence="${os_result#*|}"
+                IFS='|' read -r os confidence sig_detail <<< "$os_result"
 
                 # Build port hint string
                 hint=""
@@ -1134,7 +1155,7 @@ start_neo_scanner() {
                 done
                 [ -n "$hint" ] && hint=" [$hint]"
 
-                echo "Host: $host_name | OS: $os (confidence: $confidence)$hint" > "$tmp_host_dir/$target"
+                echo "Host: $host_name | OS: $os (confidence: $confidence)$hint $sig_detail" > "$tmp_host_dir/$target"
             ) &
         done
         wait
@@ -1166,4 +1187,4 @@ start_neo_scanner() {
     show_end_options "false"
 }
 
-start_neo_scanner
+start_neo_radar
