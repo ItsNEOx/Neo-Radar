@@ -698,7 +698,7 @@ start_neo_radar() {
                             fi
                             if [ "$dl_ok" = "1" ] && [ -s "$tmp_file" ] && grep -q "NEO RADAR" "$tmp_file"; then
                                 if [ -w "$0" ]; then
-                                    cat "$tmp_file" > "$0" && chmod +x "$0" && echo -e "  ${CLR_GREEN}[+] Update to v$remote_version complete!${CLR_RESET}" || echo -e "  ${CLR_RED}[-] Failed to write update.${CLR_RESET}"
+                                    cat "$tmp_file" > "$0" && chmod +x "$0" && echo -e "  ${CLR_GREEN}[+] Update to v$remote_version complete! Please restart NEO RADAR to run the newest version.${CLR_RESET}" || echo -e "  ${CLR_RED}[-] Failed to write update.${CLR_RESET}"
                                 else
                                     echo -e "  ${CLR_YELLOW}[-] Cannot write to $0 (permission).${CLR_RESET}"
                                     echo -e "  ${CLR_YELLOW}    Run: sudo $0${CLR_RESET}"
